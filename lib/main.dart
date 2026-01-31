@@ -13,6 +13,7 @@ class MyApp extends StatefulWidget {
   @override
   State<MyApp> createState() => MyAppState();
 
+  // ★ これがないと、他画面から「色を変えて！」と命令できません
   static MyAppState? of(BuildContext context) =>
       context.findAncestorStateOfType<MyAppState>();
 }
@@ -35,6 +36,7 @@ class MyAppState extends State<MyApp> {
     });
   }
 
+  // ★ 色を変えるための関数
   void changeColor(Color color) async {
     setState(() => _themeColor = color);
     final prefs = await SharedPreferences.getInstance();
@@ -54,24 +56,13 @@ class MyAppState extends State<MyApp> {
       debugShowCheckedModeBanner: false,
       themeMode: _isDarkMode ? ThemeMode.dark : ThemeMode.light,
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: _themeColor, brightness: Brightness.light),
+        colorScheme: ColorScheme.fromSeed(seedColor: _themeColor),
         useMaterial3: true,
         appBarTheme: AppBarTheme(backgroundColor: _themeColor, foregroundColor: Colors.white),
-        tabBarTheme: const TabBarThemeData(
-          labelColor: Colors.white,
-          unselectedLabelColor: Colors.white70,
-          indicatorColor: Colors.white,
-        ),
       ),
       darkTheme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: _themeColor, brightness: Brightness.dark),
         useMaterial3: true,
-        appBarTheme: const AppBarTheme(centerTitle: true),
-        tabBarTheme: const TabBarThemeData(
-          labelColor: Colors.white,
-          unselectedLabelColor: Colors.white60,
-          indicatorColor: Colors.white,
-        ),
       ),
       home: const HomeScreen(),
     );
