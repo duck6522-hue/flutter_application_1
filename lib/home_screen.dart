@@ -23,6 +23,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _loadData();
   }
 
+  // 「あと何日」を計算する魔法
   int _calculateDaysUntil(int payDay) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
@@ -37,9 +38,15 @@ class _HomeScreenState extends State<HomeScreen> {
     if (subsJson != null) {
       setState(() {
         _subs = List<Map<String, dynamic>>.from(json.decode(subsJson));
+        // 支払日が近い順に並べ替え
         _subs.sort((a, b) => _calculateDaysUntil(a['day'] ?? 1).compareTo(_calculateDaysUntil(b['day'] ?? 1)));
       });
     }
+  }
+
+  Future<void> _saveData() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('subscription_list', json.encode(_subs));
   }
 
   int get _totalPrice => _subs.fold(0, (sum, item) => sum + (item['price'] as int));
@@ -52,24 +59,13 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Scaffold(
         appBar: AppBar(
           title: const Text('サブスク管理', style: TextStyle(fontWeight: FontWeight.bold)),
-          centerTitle: true,
-          bottom: const TabBar(
-            tabs: [Tab(text: '一覧'), Tab(text: '分析'), Tab(text: '設定')],
-          ),
+          bottom: const TabBar(tabs: [Tab(text: '一覧'), Tab(text: '分析'), Tab(text: '設定')]),
         ),
         body: TabBarView(
           children: [_buildListView(), _buildGraphView(), _buildSettingsView(isDark)],
         ),
         floatingActionButton: FloatingActionButton(
-          onPressed: () async {
-            final result = await Navigator.push(context, MaterialPageRoute(builder: (context) => const AddScreen()));
-            if (result != null) {
-              setState(() { _subs.add(result); });
-              final prefs = await SharedPreferences.getInstance();
-              await prefs.setString('subscription_list', json.encode(_subs));
-              _loadData();
-            }
-          },
+          onPressed: () => _openAddScreen(),
           child: const Icon(Icons.add),
         ),
       ),
@@ -82,17 +78,22 @@ class _HomeScreenState extends State<HomeScreen> {
         _buildTotalCard(),
         Expanded(
           child: _subs.isEmpty 
-            ? const Center(child: Text('＋で追加してください'))
+            ? const Center(child: Text('＋ボタンで追加してください'))
             : ListView.builder(
                 itemCount: _subs.length,
                 itemBuilder: (context, index) {
                   final item = _subs[index];
                   int diff = _calculateDaysUntil(item['day'] ?? 1);
-                  return ListTile(
-                    leading: CircleAvatar(child: Text(item['genre'].substring(0, 1))),
-                    title: Text(item['name'], style: const TextStyle(fontWeight: FontWeight.bold)),
-                    subtitle: Text('毎月 ${item['day']}日（あと $diff日）'),
-                    trailing: Text('${_formatter.format(item['price'])}円'),
+                  return Card(
+                    margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    child: ListTile(
+                      leading: CircleAvatar(child: Text(item['genre'].substring(0, 1))),
+                      title: Text(item['name'], style: const TextStyle(fontWeight: FontWeight.bold)),
+                      subtitle: Text('毎月 ${item['day']}日（あと $diff日）'),
+                      trailing: Text('${_formatter.format(item['price'])}円'),
+                      onTap: () => _openAddScreen(index: index), // タップで編集
+                      onLongPress: () => _deleteSub(index), // 長押しで削除
+                    ),
                   );
                 },
               ),
@@ -129,13 +130,13 @@ class _HomeScreenState extends State<HomeScreen> {
     return Column(
       children: [
         const SizedBox(height: 30),
-        SizedBox(height: 200, child: PieChart(PieChartData(
+        SizedBox(height: 250, child: PieChart(PieChartData(
           sections: totals.entries.map((e) => PieChartSectionData(
             color: themeColors[totals.keys.toList().indexOf(e.key) % themeColors.length],
             value: e.value.toDouble(),
             title: '${e.key}\n${e.value}円',
-            radius: 60,
-            titleStyle: const TextStyle(fontSize: 10, color: Colors.white, fontWeight: FontWeight.bold),
+            radius: 70,
+            titleStyle: const TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.bold),
           )).toList(),
         ))),
       ],
@@ -146,7 +147,6 @@ class _HomeScreenState extends State<HomeScreen> {
     return ListView(
       padding: const EdgeInsets.all(24),
       children: [
-        // ★ ダークモードのスイッチを復活！
         SwitchListTile(
           title: const Text('ダークモード'),
           secondary: const Icon(Icons.dark_mode),
@@ -157,14 +157,46 @@ class _HomeScreenState extends State<HomeScreen> {
         const Text('テーマカラー', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
         const SizedBox(height: 20),
         Wrap(
-          spacing: 15,
-          runSpacing: 15,
+          spacing: 15, runSpacing: 15,
           children: themeColors.map((color) => GestureDetector(
             onTap: () => MyApp.of(context)?.changeColor(color),
             child: CircleAvatar(backgroundColor: color, radius: 25),
           )).toList(),
         ),
       ],
+    );
+  }
+
+  Future<void> _openAddScreen({int? index}) async {
+    final result = await Navigator.push(
+      context, 
+      MaterialPageRoute(builder: (context) => AddScreen(editData: index != null ? _subs[index] : null))
+    );
+    if (result != null) {
+      setState(() {
+        if (index != null) _subs[index] = result;
+        else _subs.add(result);
+      });
+      _saveData();
+      _loadData();
+    }
+  }
+
+  void _deleteSub(int index) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('削除しますか？'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('キャンセル')),
+          TextButton(onPressed: () {
+            setState(() { _subs.removeAt(index); });
+            _saveData();
+            _loadData();
+            Navigator.pop(context);
+          }, child: const Text('削除', style: TextStyle(color: Colors.red))),
+        ],
+      ),
     );
   }
 }

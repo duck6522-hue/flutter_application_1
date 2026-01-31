@@ -53,7 +53,7 @@ class MyAppState extends State<MyApp> {
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: _themeColor, brightness: Brightness.light),
         useMaterial3: true,
-        appBarTheme: AppBarTheme(backgroundColor: _themeColor, foregroundColor: Colors.white),
+        appBarTheme: AppBarTheme(backgroundColor: _themeColor, foregroundColor: Colors.white, centerTitle: true),
         tabBarTheme: const TabBarThemeData(labelColor: Colors.white, unselectedLabelColor: Colors.white70, indicatorColor: Colors.white),
       ),
       darkTheme: ThemeData(
