@@ -33,24 +33,35 @@ class _HomeScreenState extends State<HomeScreen> {
     _loadData();
   }
 
-  // ★重要：次の支払日までの日数を計算するロジック
   int _calculateDaysUntil(int? month, int day, bool isYearly) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    
     DateTime nextDate;
     if (isYearly && month != null) {
       nextDate = DateTime(now.year, month, day);
-      if (nextDate.isBefore(today)) {
-        nextDate = DateTime(now.year + 1, month, day);
-      }
+      if (nextDate.isBefore(today)) nextDate = DateTime(now.year + 1, month, day);
     } else {
       nextDate = DateTime(now.year, now.month, day);
-      if (nextDate.isBefore(today)) {
-        nextDate = DateTime(now.year, now.month + 1, day);
-      }
+      if (nextDate.isBefore(today)) nextDate = DateTime(now.year, now.month + 1, day);
     }
     return nextDate.difference(today).inDays;
+  }
+
+  // ★新しいジャンルに合わせてアイコンを追加
+  IconData _getIcon(String genre) {
+    switch (genre) {
+      case '動画': return Icons.movie;
+      case '音楽': return Icons.music_note;
+      case 'ゲーム': return Icons.videogame_asset;
+      case '仕事': return Icons.work;
+      case '携帯代': return Icons.phone_android;
+      case 'クレカ': return Icons.credit_card;
+      case '家賃': return Icons.home;
+      case '光熱費': return Icons.lightbulb;
+      case '保険': return Icons.security;
+      case 'ツール': return Icons.build;
+      default: return Icons.subscriptions;
+    }
   }
 
   int get _totalMonthlyPrice {
@@ -59,14 +70,6 @@ class _HomeScreenState extends State<HomeScreen> {
       bool itemIsYearly = item['isYearly'] ?? false;
       return sum + (itemIsYearly ? (price / 12).round() : price);
     });
-  }
-
-  IconData _getIcon(String genre) {
-    if (genre.contains('動画')) return Icons.movie;
-    if (genre.contains('音楽')) return Icons.music_note;
-    if (genre.contains('ゲーム')) return Icons.videogame_asset;
-    if (genre.contains('仕事')) return Icons.build;
-    return Icons.subscriptions;
   }
 
   Future<void> _loadData() async {
@@ -180,8 +183,7 @@ class _HomeScreenState extends State<HomeScreen> {
           Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(_isYearlyView ? '年間支出（換算）' : '月間支出（換算）', style: const TextStyle(color: Colors.white70, fontSize: 16)),
             const SizedBox(height: 8),
-            Text('${_formatter.format(displayPrice)} 円', 
-              style: const TextStyle(fontSize: 32, color: Colors.white, fontWeight: FontWeight.bold)),
+            Text('${_formatter.format(displayPrice)} 円', style: const TextStyle(fontSize: 32, color: Colors.white, fontWeight: FontWeight.bold)),
           ]),
           const Icon(Icons.account_balance_wallet, color: Colors.white30, size: 48),
         ],
@@ -197,7 +199,6 @@ class _HomeScreenState extends State<HomeScreen> {
         final item = displayList[index];
         bool itemIsYearly = item['isYearly'] ?? false;
         int diff = _calculateDaysUntil(item['month'], item['day'], itemIsYearly);
-        
         int itemPrice = item['price'] as int;
         if (!_isYearlyView && itemIsYearly) itemPrice = (itemPrice / 12).round();
         if (_isYearlyView && !itemIsYearly) itemPrice = itemPrice * 12;
@@ -221,11 +222,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     Text(_isYearlyView ? '年額相当' : '月額相当', style: const TextStyle(fontSize: 10, color: Colors.grey)),
                   ],
                 ),
-                const SizedBox(width: 8),
-                IconButton(
-                  icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
-                  onPressed: () => _deleteSub(_subs.indexOf(item)),
-                ),
+                IconButton(icon: const Icon(Icons.delete_outline, color: Colors.redAccent), onPressed: () => _deleteSub(_subs.indexOf(item))),
               ],
             ),
             onTap: () => _openAddScreen(index: _subs.indexOf(item)),
@@ -263,25 +260,48 @@ class _HomeScreenState extends State<HomeScreen> {
       totals[item['genre']] = (totals[item['genre']] ?? 0) + displayPrice;
     }
     if (totals.isEmpty) return const Center(child: Text('データがありません'));
-    return Column(
-      children: [
-        const SizedBox(height: 20),
-        Text(_isYearlyView ? '年間支出の内訳' : '月間支出の内訳', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 20),
-        SizedBox(
-          height: 300,
-          child: PieChart(PieChartData(
-            centerSpaceRadius: 50,
-            sections: totals.entries.map((e) => PieChartSectionData(
-              color: themeColors[totals.keys.toList().indexOf(e.key) % themeColors.length],
-              value: e.value.toDouble(),
-              title: '${e.key}\n${_formatter.format(e.value)}円',
-              radius: 80,
-              titleStyle: const TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.bold),
-            )).toList(),
-          )),
-        ),
-      ],
+
+    return SingleChildScrollView(
+      child: Column(
+        children: [
+          const SizedBox(height: 20),
+          Text(_isYearlyView ? '年間支出の内訳' : '月間支出の内訳', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 20),
+          SizedBox(
+            height: 300,
+            child: PieChart(PieChartData(
+              startDegreeOffset: 270, // ★グラフの開始位置を12時に固定
+              centerSpaceRadius: 50,
+              sectionsSpace: 2,
+              sections: totals.entries.map((e) => PieChartSectionData(
+                color: themeColors[totals.keys.toList().indexOf(e.key) % themeColors.length],
+                value: e.value.toDouble(),
+                title: '${e.key}\n${(e.value / ( _isYearlyView ? _totalMonthlyPrice * 12 : _totalMonthlyPrice ) * 100).toStringAsFixed(1)}%',
+                radius: 80,
+                titleStyle: const TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.bold),
+              )).toList(),
+            )),
+          ),
+          const SizedBox(height: 20),
+          // ★グラフの下に凡例（説明）を追加してわかりやすく
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Wrap(
+              spacing: 16,
+              runSpacing: 8,
+              children: totals.entries.map((e) => Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(width: 12, height: 12, color: themeColors[totals.keys.toList().indexOf(e.key) % themeColors.length]),
+                  const SizedBox(width: 4),
+                  Text('${e.key}: ${_formatter.format(e.value)}円'),
+                ],
+              )).toList(),
+            ),
+          ),
+          const SizedBox(height: 40),
+        ],
+      ),
     );
   }
 

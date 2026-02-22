@@ -11,12 +11,16 @@ class AddScreen extends StatefulWidget {
 class _AddScreenState extends State<AddScreen> {
   final _nameController = TextEditingController();
   final _priceController = TextEditingController();
-  int _selectedMonth = 1; // ★追加：更新月
+  int _selectedMonth = 1;
   int _selectedDay = 1;
   String _selectedGenre = '動画';
   bool _isYearly = false;
 
-  final List<String> _genres = ['動画', '音楽', 'ゲーム', '仕事', 'ツール', 'その他'];
+  // ★ジャンルを大幅に拡充！
+  final List<String> _genres = [
+    '動画', '音楽', 'ゲーム', '仕事', 'ツール', 
+    '携帯代', 'クレカ', '家賃', '光熱費', '保険', 'その他'
+  ];
 
   @override
   void initState() {
@@ -24,7 +28,7 @@ class _AddScreenState extends State<AddScreen> {
     if (widget.editData != null) {
       _nameController.text = widget.editData!['name'];
       _priceController.text = widget.editData!['price'].toString();
-      _selectedMonth = widget.editData!['month'] ?? 1; // ★追加
+      _selectedMonth = widget.editData!['month'] ?? 1;
       _selectedDay = widget.editData!['day'];
       _selectedGenre = widget.editData!['genre'];
       _isYearly = widget.editData!['isYearly'] ?? false;
@@ -38,12 +42,13 @@ class _AddScreenState extends State<AddScreen> {
       body: ListView(
         padding: const EdgeInsets.all(24),
         children: [
-          TextField(controller: _nameController, decoration: const InputDecoration(labelText: 'サービス名')),
+          TextField(controller: _nameController, decoration: const InputDecoration(labelText: 'サービス名', border: OutlineInputBorder())),
           const SizedBox(height: 20),
-          TextField(controller: _priceController, decoration: const InputDecoration(labelText: '金額'), keyboardType: TextInputType.number),
+          TextField(controller: _priceController, decoration: const InputDecoration(labelText: '金額', border: OutlineInputBorder()), keyboardType: TextInputType.number),
           const SizedBox(height: 20),
           
           const Text('支払いサイクル', style: TextStyle(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
           Row(
             children: [
               ChoiceChip(label: const Text('月払い'), selected: !_isYearly, onSelected: (val) => setState(() => _isYearly = false)),
@@ -53,7 +58,6 @@ class _AddScreenState extends State<AddScreen> {
           ),
           const SizedBox(height: 20),
 
-          // ★追加：年払いの時だけ「月」の選択肢を出す
           if (_isYearly) ...[
             const Text('更新月', style: TextStyle(fontWeight: FontWeight.bold)),
             DropdownButton<int>(
@@ -73,8 +77,10 @@ class _AddScreenState extends State<AddScreen> {
           const SizedBox(height: 20),
           
           const Text('ジャンル', style: TextStyle(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
           Wrap(
             spacing: 8,
+            runSpacing: 8,
             children: _genres.map((g) => ChoiceChip(
               label: Text(g),
               selected: _selectedGenre == g,
@@ -83,17 +89,19 @@ class _AddScreenState extends State<AddScreen> {
           ),
           const SizedBox(height: 40),
           ElevatedButton(
+            style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 50)),
             onPressed: () {
+              if (_nameController.text.isEmpty || _priceController.text.isEmpty) return;
               Navigator.pop(context, {
                 'name': _nameController.text,
                 'price': int.parse(_priceController.text),
-                'month': _selectedMonth, // ★追加
+                'month': _selectedMonth,
                 'day': _selectedDay,
                 'genre': _selectedGenre,
                 'isYearly': _isYearly,
               });
             },
-            child: const Text('保存する'),
+            child: const Text('保存する', style: TextStyle(fontSize: 18)),
           ),
         ],
       ),
