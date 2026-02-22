@@ -11,9 +11,10 @@ class AddScreen extends StatefulWidget {
 class _AddScreenState extends State<AddScreen> {
   final _nameController = TextEditingController();
   final _priceController = TextEditingController();
+  int _selectedMonth = 1; // ★追加：更新月
   int _selectedDay = 1;
   String _selectedGenre = '動画';
-  bool _isYearly = false; // ★追加：年払いフラグ
+  bool _isYearly = false;
 
   final List<String> _genres = ['動画', '音楽', 'ゲーム', '仕事', 'ツール', 'その他'];
 
@@ -23,6 +24,7 @@ class _AddScreenState extends State<AddScreen> {
     if (widget.editData != null) {
       _nameController.text = widget.editData!['name'];
       _priceController.text = widget.editData!['price'].toString();
+      _selectedMonth = widget.editData!['month'] ?? 1; // ★追加
       _selectedDay = widget.editData!['day'];
       _selectedGenre = widget.editData!['genre'];
       _isYearly = widget.editData!['isYearly'] ?? false;
@@ -41,7 +43,6 @@ class _AddScreenState extends State<AddScreen> {
           TextField(controller: _priceController, decoration: const InputDecoration(labelText: '金額'), keyboardType: TextInputType.number),
           const SizedBox(height: 20),
           
-          // ★追加：月払い/年払いの選択
           const Text('支払いサイクル', style: TextStyle(fontWeight: FontWeight.bold)),
           Row(
             children: [
@@ -52,7 +53,18 @@ class _AddScreenState extends State<AddScreen> {
           ),
           const SizedBox(height: 20),
 
-          const Text('支払日 (毎月/毎年)', style: TextStyle(fontWeight: FontWeight.bold)),
+          // ★追加：年払いの時だけ「月」の選択肢を出す
+          if (_isYearly) ...[
+            const Text('更新月', style: TextStyle(fontWeight: FontWeight.bold)),
+            DropdownButton<int>(
+              value: _selectedMonth,
+              items: List.generate(12, (i) => DropdownMenuItem(value: i + 1, child: Text('${i + 1}月'))),
+              onChanged: (val) => setState(() => _selectedMonth = val!),
+            ),
+            const SizedBox(height: 20),
+          ],
+
+          Text(_isYearly ? '更新日' : '支払日 (毎月)', style: const TextStyle(fontWeight: FontWeight.bold)),
           DropdownButton<int>(
             value: _selectedDay,
             items: List.generate(31, (i) => DropdownMenuItem(value: i + 1, child: Text('${i + 1}日'))),
@@ -75,9 +87,10 @@ class _AddScreenState extends State<AddScreen> {
               Navigator.pop(context, {
                 'name': _nameController.text,
                 'price': int.parse(_priceController.text),
+                'month': _selectedMonth, // ★追加
                 'day': _selectedDay,
                 'genre': _selectedGenre,
-                'isYearly': _isYearly, // ★追加
+                'isYearly': _isYearly,
               });
             },
             child: const Text('保存する'),

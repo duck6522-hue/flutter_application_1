@@ -16,7 +16,7 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Map<String, dynamic>> _subs = [];
   String _searchQuery = '';
   String _sortBy = 'date';
-  bool _isYearlyView = false; // 表示モード（月表示/年表示）
+  bool _isYearlyView = false;
   final _formatter = NumberFormat('#,###');
   
   final List<Color> themeColors = [
@@ -33,21 +33,32 @@ class _HomeScreenState extends State<HomeScreen> {
     _loadData();
   }
 
-  // ★重要：合計金額の計算（年払いを月換算する）
+  // ★重要：次の支払日までの日数を計算するロジック
+  int _calculateDaysUntil(int? month, int day, bool isYearly) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    
+    DateTime nextDate;
+    if (isYearly && month != null) {
+      nextDate = DateTime(now.year, month, day);
+      if (nextDate.isBefore(today)) {
+        nextDate = DateTime(now.year + 1, month, day);
+      }
+    } else {
+      nextDate = DateTime(now.year, now.month, day);
+      if (nextDate.isBefore(today)) {
+        nextDate = DateTime(now.year, now.month + 1, day);
+      }
+    }
+    return nextDate.difference(today).inDays;
+  }
+
   int get _totalMonthlyPrice {
     return _subs.fold(0, (sum, item) {
       int price = item['price'] as int;
       bool itemIsYearly = item['isYearly'] ?? false;
       return sum + (itemIsYearly ? (price / 12).round() : price);
     });
-  }
-
-  int _calculateDaysUntil(int payDay) {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    var nextPayDate = DateTime(now.year, now.month, payDay);
-    if (nextPayDate.isBefore(today)) nextPayDate = DateTime(now.year, now.month + 1, payDay);
-    return nextPayDate.difference(today).inDays;
   }
 
   IconData _getIcon(String genre) {
@@ -72,7 +83,11 @@ class _HomeScreenState extends State<HomeScreen> {
   void _sortList() {
     setState(() {
       if (_sortBy == 'date') {
-        _subs.sort((a, b) => _calculateDaysUntil(a['day'] ?? 1).compareTo(_calculateDaysUntil(b['day'] ?? 1)));
+        _subs.sort((a, b) {
+          int daysA = _calculateDaysUntil(a['month'], a['day'], a['isYearly'] ?? false);
+          int daysB = _calculateDaysUntil(b['month'], b['day'], b['isYearly'] ?? false);
+          return daysA.compareTo(daysB);
+        });
       } else {
         _subs.sort((a, b) => (b['price'] as int).compareTo(a['price'] as int));
       }
@@ -181,9 +196,8 @@ class _HomeScreenState extends State<HomeScreen> {
       itemBuilder: (context, index) {
         final item = displayList[index];
         bool itemIsYearly = item['isYearly'] ?? false;
-        int diff = _calculateDaysUntil(item['day'] ?? 1);
+        int diff = _calculateDaysUntil(item['month'], item['day'], itemIsYearly);
         
-        // リスト内の表示価格（月表示なら年払いを/12する、年表示なら月払いを*12する）
         int itemPrice = item['price'] as int;
         if (!_isYearlyView && itemIsYearly) itemPrice = (itemPrice / 12).round();
         if (_isYearlyView && !itemIsYearly) itemPrice = itemPrice * 12;
@@ -193,17 +207,28 @@ class _HomeScreenState extends State<HomeScreen> {
           child: ListTile(
             leading: Icon(_getIcon(item['genre']), color: Theme.of(context).colorScheme.primary),
             title: Text(item['name'], style: const TextStyle(fontWeight: FontWeight.bold)),
-            subtitle: Text(itemIsYearly ? '毎年 ${item['day']}日（年払い）' : '毎月 ${item['day']}日'),
-            trailing: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.end,
+            subtitle: Text(itemIsYearly 
+              ? '次回の更新: ${item['month']}月${item['day']}日（あと $diff日）' 
+              : '毎月 ${item['day']}日（あと $diff日）'),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Text('${_formatter.format(itemPrice)}円', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                Text(_isYearlyView ? '年額相当' : '月額相当', style: const TextStyle(fontSize: 10, color: Colors.grey)),
+                Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text('${_formatter.format(itemPrice)}円', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                    Text(_isYearlyView ? '年額相当' : '月額相当', style: const TextStyle(fontSize: 10, color: Colors.grey)),
+                  ],
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                  onPressed: () => _deleteSub(_subs.indexOf(item)),
+                ),
               ],
             ),
             onTap: () => _openAddScreen(index: _subs.indexOf(item)),
-            onLongPress: () => _deleteSub(_subs.indexOf(item)),
           ),
         );
       },
