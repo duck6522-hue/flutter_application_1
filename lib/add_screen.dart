@@ -3,75 +3,86 @@ import 'package:flutter/material.dart';
 class AddScreen extends StatefulWidget {
   final Map<String, dynamic>? editData;
   const AddScreen({super.key, this.editData});
+
   @override
   State<AddScreen> createState() => _AddScreenState();
 }
 
 class _AddScreenState extends State<AddScreen> {
-  late TextEditingController _nameController;
-  late TextEditingController _priceController;
-  late TextEditingController _genreController;
-  late TextEditingController _dayController;
+  final _nameController = TextEditingController();
+  final _priceController = TextEditingController();
+  int _selectedDay = 1;
+  String _selectedGenre = '動画';
+  bool _isYearly = false; // ★追加：年払いフラグ
 
-  final List<Map<String, dynamic>> popularServices = [
-    {'name': 'Netflix', 'price': 1490, 'genre': 'エンタメ'},
-    {'name': 'YouTube Premium', 'price': 1280, 'genre': 'エンタメ'},
-    {'name': 'Amazon Prime', 'price': 600, 'genre': '生活'},
-    {'name': 'Apple Music', 'price': 1080, 'genre': 'エンタメ'},
-  ];
+  final List<String> _genres = ['動画', '音楽', 'ゲーム', '仕事', 'ツール', 'その他'];
 
   @override
   void initState() {
     super.initState();
-    _nameController = TextEditingController(text: widget.editData?['name'] ?? '');
-    _priceController = TextEditingController(text: widget.editData?['price']?.toString() ?? '');
-    _genreController = TextEditingController(text: widget.editData?['genre'] ?? '');
-    _dayController = TextEditingController(text: widget.editData?['day']?.toString() ?? '1');
+    if (widget.editData != null) {
+      _nameController.text = widget.editData!['name'];
+      _priceController.text = widget.editData!['price'].toString();
+      _selectedDay = widget.editData!['day'];
+      _selectedGenre = widget.editData!['genre'];
+      _isYearly = widget.editData!['isYearly'] ?? false;
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(widget.editData != null ? '編集' : 'サブスクを追加')),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            if (widget.editData == null) ...[
-              const Text('人気サービス', style: TextStyle(fontWeight: FontWeight.bold)),
-              const SizedBox(height: 10),
-              Wrap(
-                spacing: 8,
-                children: popularServices.map((s) => ActionChip(
-                  label: Text(s['name']),
-                  onPressed: () {
-                    _nameController.text = s['name'];
-                    _priceController.text = s['price'].toString();
-                    _genreController.text = s['genre'];
-                  },
-                )).toList(),
-              ),
-              const Divider(height: 40),
+      appBar: AppBar(title: Text(widget.editData == null ? 'サブスクを追加' : '編集')),
+      body: ListView(
+        padding: const EdgeInsets.all(24),
+        children: [
+          TextField(controller: _nameController, decoration: const InputDecoration(labelText: 'サービス名')),
+          const SizedBox(height: 20),
+          TextField(controller: _priceController, decoration: const InputDecoration(labelText: '金額'), keyboardType: TextInputType.number),
+          const SizedBox(height: 20),
+          
+          // ★追加：月払い/年払いの選択
+          const Text('支払いサイクル', style: TextStyle(fontWeight: FontWeight.bold)),
+          Row(
+            children: [
+              ChoiceChip(label: const Text('月払い'), selected: !_isYearly, onSelected: (val) => setState(() => _isYearly = false)),
+              const SizedBox(width: 10),
+              ChoiceChip(label: const Text('年払い'), selected: _isYearly, onSelected: (val) => setState(() => _isYearly = true)),
             ],
-            TextField(controller: _nameController, decoration: const InputDecoration(labelText: 'サービス名')),
-            TextField(controller: _genreController, decoration: const InputDecoration(labelText: 'ジャンル')),
-            TextField(controller: _dayController, decoration: const InputDecoration(labelText: '支払日（1-31）'), keyboardType: TextInputType.number),
-            TextField(controller: _priceController, decoration: const InputDecoration(labelText: '価格（円）'), keyboardType: TextInputType.number),
-            const SizedBox(height: 30),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 50)),
-              onPressed: () {
-                Navigator.pop(context, {
-                  'name': _nameController.text,
-                  'genre': _genreController.text,
-                  'day': int.tryParse(_dayController.text) ?? 1,
-                  'price': int.tryParse(_priceController.text) ?? 0,
-                });
-              },
-              child: const Text('保存'),
-            ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 20),
+
+          const Text('支払日 (毎月/毎年)', style: TextStyle(fontWeight: FontWeight.bold)),
+          DropdownButton<int>(
+            value: _selectedDay,
+            items: List.generate(31, (i) => DropdownMenuItem(value: i + 1, child: Text('${i + 1}日'))),
+            onChanged: (val) => setState(() => _selectedDay = val!),
+          ),
+          const SizedBox(height: 20),
+          
+          const Text('ジャンル', style: TextStyle(fontWeight: FontWeight.bold)),
+          Wrap(
+            spacing: 8,
+            children: _genres.map((g) => ChoiceChip(
+              label: Text(g),
+              selected: _selectedGenre == g,
+              onSelected: (val) => setState(() => _selectedGenre = g),
+            )).toList(),
+          ),
+          const SizedBox(height: 40),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context, {
+                'name': _nameController.text,
+                'price': int.parse(_priceController.text),
+                'day': _selectedDay,
+                'genre': _selectedGenre,
+                'isYearly': _isYearly, // ★追加
+              });
+            },
+            child: const Text('保存する'),
+          ),
+        ],
       ),
     );
   }

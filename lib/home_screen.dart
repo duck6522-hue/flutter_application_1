@@ -16,7 +16,7 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Map<String, dynamic>> _subs = [];
   String _searchQuery = '';
   String _sortBy = 'date';
-  bool _isYearly = false; // ★追加：月/年切り替えフラグ
+  bool _isYearlyView = false; // 表示モード（月表示/年表示）
   final _formatter = NumberFormat('#,###');
   
   final List<Color> themeColors = [
@@ -33,6 +33,15 @@ class _HomeScreenState extends State<HomeScreen> {
     _loadData();
   }
 
+  // ★重要：合計金額の計算（年払いを月換算する）
+  int get _totalMonthlyPrice {
+    return _subs.fold(0, (sum, item) {
+      int price = item['price'] as int;
+      bool itemIsYearly = item['isYearly'] ?? false;
+      return sum + (itemIsYearly ? (price / 12).round() : price);
+    });
+  }
+
   int _calculateDaysUntil(int payDay) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
@@ -42,10 +51,10 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   IconData _getIcon(String genre) {
-    if (genre.contains('動画') || genre.contains('映画')) return Icons.movie;
+    if (genre.contains('動画')) return Icons.movie;
     if (genre.contains('音楽')) return Icons.music_note;
     if (genre.contains('ゲーム')) return Icons.videogame_asset;
-    if (genre.contains('仕事') || genre.contains('ツール')) return Icons.build;
+    if (genre.contains('仕事')) return Icons.build;
     return Icons.subscriptions;
   }
 
@@ -75,8 +84,6 @@ class _HomeScreenState extends State<HomeScreen> {
     await prefs.setString('subscription_list', json.encode(_subs));
   }
 
-  int get _totalPrice => _subs.fold(0, (sum, item) => sum + (item['price'] as int));
-
   @override
   Widget build(BuildContext context) {
     bool isDark = Theme.of(context).brightness == Brightness.dark;
@@ -104,7 +111,7 @@ class _HomeScreenState extends State<HomeScreen> {
             Column(
               children: [
                 _buildSummaryHeader(),
-                _buildToggleSwitch(), // ★追加：月/年切り替えスイッチ
+                _buildToggleSwitch(),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   child: TextField(
@@ -126,40 +133,37 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // ★追加：月/年切り替えスイッチの見た目
   Widget _buildToggleSwitch() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: SegmentedButton<bool>(
-segments: const [
-  ButtonSegment(value: false, label: Text('月間表示'), icon: Icon(Icons.calendar_month)),
-  ButtonSegment(value: true, label: Text('年間表示'), icon: Icon(Icons.event_note)),
-],
-        selected: {_isYearly},
+        segments: const [
+          ButtonSegment(value: false, label: Text('月額換算'), icon: Icon(Icons.calendar_month)),
+          ButtonSegment(value: true, label: Text('年額換算'), icon: Icon(Icons.event_note)),
+        ],
+        selected: {_isYearlyView},
         onSelectionChanged: (Set<bool> newSelection) {
-          setState(() {
-            _isYearly = newSelection.first;
-          });
+          setState(() => _isYearlyView = newSelection.first);
         },
       ),
     );
   }
 
   Widget _buildSummaryHeader() {
-    int displayPrice = _isYearly ? _totalPrice * 12 : _totalPrice;
+    int displayPrice = _isYearlyView ? _totalMonthlyPrice * 12 : _totalMonthlyPrice;
     return Container(
       padding: const EdgeInsets.all(24),
       margin: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         gradient: LinearGradient(colors: [Theme.of(context).colorScheme.primary, Theme.of(context).colorScheme.secondary]),
         borderRadius: BorderRadius.circular(20),
-        boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 10, offset: Offset(0, 4))],
+        boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 10, offset: Offset(0, 4))],
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(_isYearly ? '年間合計支出' : '月間合計支出', style: const TextStyle(color: Colors.white70, fontSize: 16)),
+            Text(_isYearlyView ? '年間支出（換算）' : '月間支出（換算）', style: const TextStyle(color: Colors.white70, fontSize: 16)),
             const SizedBox(height: 8),
             Text('${_formatter.format(displayPrice)} 円', 
               style: const TextStyle(fontSize: 32, color: Colors.white, fontWeight: FontWeight.bold)),
@@ -176,22 +180,26 @@ segments: const [
       itemCount: displayList.length,
       itemBuilder: (context, index) {
         final item = displayList[index];
+        bool itemIsYearly = item['isYearly'] ?? false;
         int diff = _calculateDaysUntil(item['day'] ?? 1);
-        // ★追加：モードによって表示価格を変える
-        int itemPrice = _isYearly ? (item['price'] as int) * 12 : (item['price'] as int);
         
+        // リスト内の表示価格（月表示なら年払いを/12する、年表示なら月払いを*12する）
+        int itemPrice = item['price'] as int;
+        if (!_isYearlyView && itemIsYearly) itemPrice = (itemPrice / 12).round();
+        if (_isYearlyView && !itemIsYearly) itemPrice = itemPrice * 12;
+
         return Card(
           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
           child: ListTile(
             leading: Icon(_getIcon(item['genre']), color: Theme.of(context).colorScheme.primary),
             title: Text(item['name'], style: const TextStyle(fontWeight: FontWeight.bold)),
-            subtitle: Text('支払日: ${item['day']}日（あと $diff日）'),
+            subtitle: Text(itemIsYearly ? '毎年 ${item['day']}日（年払い）' : '毎月 ${item['day']}日'),
             trailing: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 Text('${_formatter.format(itemPrice)}円', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                Text(_isYearly ? '年額' : '月額', style: const TextStyle(fontSize: 10, color: Colors.grey)),
+                Text(_isYearlyView ? '年額相当' : '月額相当', style: const TextStyle(fontSize: 10, color: Colors.grey)),
               ],
             ),
             onTap: () => _openAddScreen(index: _subs.indexOf(item)),
@@ -223,14 +231,17 @@ segments: const [
   Widget _buildGraphView() {
     Map<String, int> totals = {};
     for (var item in _subs) {
-      int price = _isYearly ? (item['price'] as int) * 12 : (item['price'] as int);
-      totals[item['genre']] = (totals[item['genre']] ?? 0) + price;
+      int price = item['price'] as int;
+      bool itemIsYearly = item['isYearly'] ?? false;
+      int monthlyPrice = itemIsYearly ? (price / 12).round() : price;
+      int displayPrice = _isYearlyView ? monthlyPrice * 12 : monthlyPrice;
+      totals[item['genre']] = (totals[item['genre']] ?? 0) + displayPrice;
     }
     if (totals.isEmpty) return const Center(child: Text('データがありません'));
     return Column(
       children: [
         const SizedBox(height: 20),
-        Text(_isYearly ? '年間支出の内訳' : '月間支出の内訳', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+        Text(_isYearlyView ? '年間支出の内訳' : '月間支出の内訳', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
         const SizedBox(height: 20),
         SizedBox(
           height: 300,
