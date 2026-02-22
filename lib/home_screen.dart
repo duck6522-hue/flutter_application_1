@@ -15,7 +15,19 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   List<Map<String, dynamic>> _subs = [];
   final _formatter = NumberFormat('#,###');
-  final List<Color> themeColors = [Colors.blue, Colors.red, Colors.green, Colors.orange, Colors.purple, Colors.pink, Colors.teal];
+  
+  // ★修正ポイント1：カラーバリエーションを倍増（パステル含む）
+  final List<Color> themeColors = [
+    Colors.blue, Colors.red, Colors.green, Colors.orange, Colors.purple, Colors.pink, Colors.teal, // 既存のビビッドカラー
+    // ここから新しいパステル系カラー
+    const Color(0xFF90CAF9), // パステルブルー
+    const Color(0xFFA5D6A7), // ミントグリーン
+    const Color(0xFFF48FB1), // パステルピンク
+    const Color(0xFFCE93D8), // ラベンダー
+    const Color(0xFFFFCC80), // パステルオレンジ
+    const Color(0xFFFFF59D), // クリームイエロー
+    const Color(0xFF80DEEA), // ベビーシアン
+  ];
 
   @override
   void initState() {
@@ -87,10 +99,14 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: ListTile(
                       leading: CircleAvatar(child: Text(item['genre'].substring(0, 1))),
                       title: Text(item['name'], style: const TextStyle(fontWeight: FontWeight.bold)),
-                      subtitle: Text('毎月 ${item['day']}日（あと $diff日）'),
-                      trailing: Text('${_formatter.format(item['price'])}円'),
-                      onTap: () => _openAddScreen(index: index),
-                      onLongPress: () => _deleteSub(index), // ここで削除呼び出し
+                      // ★修正ポイント2：価格を下に移動し、右側にゴミ箱ボタンを設置
+                      subtitle: Text('毎月 ${item['day']}日（あと $diff日）\n${_formatter.format(item['price'])}円'),
+                      isThreeLine: true,
+                      trailing: IconButton(
+                        icon: const Icon(Icons.delete_outline),
+                        onPressed: () => _deleteSub(index), // ボタンを押したら削除確認へ
+                      ),
+                      onTap: () => _openAddScreen(index: index), // タップで編集
                     ),
                   );
                 },
@@ -100,7 +116,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // ★ 修正ポイント：確認ダイアログを追加
+  // 削除確認ダイアログ（前回の修正済みバージョン）
   void _deleteSub(int index) {
     showDialog(
       context: context,
@@ -113,13 +129,13 @@ class _HomeScreenState extends State<HomeScreen> {
             child: const Text('キャンセル'),
           ),
           TextButton(
-            onPressed: () {
+            onPressed: () async {
               setState(() {
                 _subs.removeAt(index);
               });
-              _saveData();
-              _loadData();
-              Navigator.pop(context); // ダイアログを閉じる
+              await _saveData();
+              if (!mounted) return;
+              Navigator.pop(context);
             },
             child: const Text('削除', style: TextStyle(color: Colors.red)),
           ),
@@ -158,6 +174,7 @@ class _HomeScreenState extends State<HomeScreen> {
         const SizedBox(height: 30),
         SizedBox(height: 250, child: PieChart(PieChartData(
           sections: totals.entries.map((e) => PieChartSectionData(
+            // ★修正ポイント3：色数が増えたので、たくさんの色を使えるように調整
             color: themeColors[totals.keys.toList().indexOf(e.key) % themeColors.length],
             value: e.value.toDouble(),
             title: '${e.key}\n${e.value}円',
@@ -182,6 +199,7 @@ class _HomeScreenState extends State<HomeScreen> {
         const Divider(height: 40),
         const Text('テーマカラー', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
         const SizedBox(height: 20),
+        // ★修正ポイント4：色選択ボタンの表示も14色に対応
         Wrap(
           spacing: 15, runSpacing: 15,
           children: themeColors.map((color) => GestureDetector(
