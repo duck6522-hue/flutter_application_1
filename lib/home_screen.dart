@@ -23,7 +23,6 @@ class _HomeScreenState extends State<HomeScreen> {
     _loadData();
   }
 
-  // 「あと何日」を計算する魔法
   int _calculateDaysUntil(int payDay) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
@@ -38,7 +37,6 @@ class _HomeScreenState extends State<HomeScreen> {
     if (subsJson != null) {
       setState(() {
         _subs = List<Map<String, dynamic>>.from(json.decode(subsJson));
-        // 支払日が近い順に並べ替え
         _subs.sort((a, b) => _calculateDaysUntil(a['day'] ?? 1).compareTo(_calculateDaysUntil(b['day'] ?? 1)));
       });
     }
@@ -91,14 +89,42 @@ class _HomeScreenState extends State<HomeScreen> {
                       title: Text(item['name'], style: const TextStyle(fontWeight: FontWeight.bold)),
                       subtitle: Text('毎月 ${item['day']}日（あと $diff日）'),
                       trailing: Text('${_formatter.format(item['price'])}円'),
-                      onTap: () => _openAddScreen(index: index), // タップで編集
-                      onLongPress: () => _deleteSub(index), // 長押しで削除
+                      onTap: () => _openAddScreen(index: index),
+                      onLongPress: () => _deleteSub(index), // ここで削除呼び出し
                     ),
                   );
                 },
               ),
         ),
       ],
+    );
+  }
+
+  // ★ 修正ポイント：確認ダイアログを追加
+  void _deleteSub(int index) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('削除の確認'),
+        content: Text('「${_subs[index]['name']}」を削除してもよろしいですか？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('キャンセル'),
+          ),
+          TextButton(
+            onPressed: () {
+              setState(() {
+                _subs.removeAt(index);
+              });
+              _saveData();
+              _loadData();
+              Navigator.pop(context); // ダイアログを閉じる
+            },
+            child: const Text('削除', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
     );
   }
 
@@ -180,23 +206,5 @@ class _HomeScreenState extends State<HomeScreen> {
       _saveData();
       _loadData();
     }
-  }
-
-  void _deleteSub(int index) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('削除しますか？'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('キャンセル')),
-          TextButton(onPressed: () {
-            setState(() { _subs.removeAt(index); });
-            _saveData();
-            _loadData();
-            Navigator.pop(context);
-          }, child: const Text('削除', style: TextStyle(color: Colors.red))),
-        ],
-      ),
-    );
   }
 }
