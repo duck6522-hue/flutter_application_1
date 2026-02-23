@@ -15,8 +15,9 @@ class _AddScreenState extends State<AddScreen> {
   int _selectedDay = 1;
   String _selectedGenre = '動画';
   bool _isYearly = false;
+  bool _includeInMonthly = true;
+  bool _isReviewing = false; // ★追加：解約検討中フラグ
 
-  // ★ジャンルを大幅に拡充！
   final List<String> _genres = [
     '動画', '音楽', 'ゲーム', '仕事', 'ツール', 
     '携帯代', 'クレカ', '家賃', '光熱費', '保険', 'その他'
@@ -32,6 +33,8 @@ class _AddScreenState extends State<AddScreen> {
       _selectedDay = widget.editData!['day'];
       _selectedGenre = widget.editData!['genre'];
       _isYearly = widget.editData!['isYearly'] ?? false;
+      _includeInMonthly = widget.editData!['includeInMonthly'] ?? true;
+      _isReviewing = widget.editData!['isReviewing'] ?? false; // ★追加
     }
   }
 
@@ -47,8 +50,23 @@ class _AddScreenState extends State<AddScreen> {
           TextField(controller: _priceController, decoration: const InputDecoration(labelText: '金額', border: OutlineInputBorder()), keyboardType: TextInputType.number),
           const SizedBox(height: 20),
           
+          const Text('設定', style: TextStyle(fontWeight: FontWeight.bold)),
+          SwitchListTile(
+            title: const Text('月額換算の合計に含める'),
+            value: _includeInMonthly,
+            onChanged: (val) => setState(() => _includeInMonthly = val),
+          ),
+          // ★追加：解約検討スイッチ
+          SwitchListTile(
+            title: const Text('解約を検討している'),
+            subtitle: const Text('検討リストとしてマークします'),
+            activeColor: Colors.orange,
+            value: _isReviewing,
+            onChanged: (val) => setState(() => _isReviewing = val),
+          ),
+          const Divider(),
+
           const Text('支払いサイクル', style: TextStyle(fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
           Row(
             children: [
               ChoiceChip(label: const Text('月払い'), selected: !_isYearly, onSelected: (val) => setState(() => _isYearly = false)),
@@ -77,10 +95,8 @@ class _AddScreenState extends State<AddScreen> {
           const SizedBox(height: 20),
           
           const Text('ジャンル', style: TextStyle(fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
           Wrap(
-            spacing: 8,
-            runSpacing: 8,
+            spacing: 8, runSpacing: 8,
             children: _genres.map((g) => ChoiceChip(
               label: Text(g),
               selected: _selectedGenre == g,
@@ -99,6 +115,8 @@ class _AddScreenState extends State<AddScreen> {
                 'day': _selectedDay,
                 'genre': _selectedGenre,
                 'isYearly': _isYearly,
+                'includeInMonthly': _includeInMonthly,
+                'isReviewing': _isReviewing, // ★追加
               });
             },
             child: const Text('保存する', style: TextStyle(fontSize: 18)),

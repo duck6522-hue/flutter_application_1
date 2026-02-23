@@ -1,65 +1,54 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'home_screen.dart';
 
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+void main() {
   runApp(const MyApp());
 }
 
 class MyApp extends StatefulWidget {
   const MyApp({super.key});
+
   @override
-  State<MyApp> createState() => MyAppState();
-  static MyAppState? of(BuildContext context) => context.findAncestorStateOfType<MyAppState>();
+  State<MyApp> createState() => _MyAppState();
+
+  static _MyAppState? of(BuildContext context) => context.findAncestorStateOfType<_MyAppState>();
 }
 
-class MyAppState extends State<MyApp> {
-  Color _themeColor = Colors.blue;
-  bool _isDarkMode = false;
+class _MyAppState extends State<MyApp> {
+  ThemeMode _themeMode = ThemeMode.system;
+  Color _primaryColor = Colors.blue;
 
-  @override
-  void initState() {
-    super.initState();
-    _loadSettings();
+  void toggleDarkMode(bool isDark) {
+    setState(() => _themeMode = isDark ? ThemeMode.dark : ThemeMode.light);
   }
 
-  Future<void> _loadSettings() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _themeColor = Color(prefs.getInt('theme_color') ?? Colors.blue.toARGB32());
-      _isDarkMode = prefs.getBool('is_dark_mode') ?? false;
-    });
-  }
-
-  void changeColor(Color color) async {
-    setState(() => _themeColor = color);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('theme_color', color.toARGB32());
-  }
-
-  void toggleDarkMode(bool value) async {
-    setState(() => _isDarkMode = value);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('is_dark_mode', value);
+  void changeColor(Color color) {
+    setState(() => _primaryColor = color);
   }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'サブスク管理',
+      title: 'サブスク管理 Pro',
       debugShowCheckedModeBanner: false,
-      themeMode: _isDarkMode ? ThemeMode.dark : ThemeMode.light,
+      themeMode: _themeMode,
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: _themeColor, brightness: Brightness.light),
         useMaterial3: true,
-        appBarTheme: AppBarTheme(backgroundColor: _themeColor, foregroundColor: Colors.white, centerTitle: true),
-        tabBarTheme: const TabBarThemeData(labelColor: Colors.white, unselectedLabelColor: Colors.white70, indicatorColor: Colors.white),
+        colorSchemeSeed: _primaryColor,
+        brightness: Brightness.light,
+        // ★フォント設定をモダンに変更
+        fontFamily: 'sans-serif', 
+        textTheme: const TextTheme(
+          headlineMedium: TextStyle(fontWeight: FontWeight.w700, letterSpacing: -0.5),
+          titleLarge: TextStyle(fontWeight: FontWeight.w600, letterSpacing: -0.5),
+          bodyMedium: TextStyle(letterSpacing: 0.2),
+        ),
       ),
       darkTheme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: _themeColor, brightness: Brightness.dark),
         useMaterial3: true,
-        appBarTheme: const AppBarTheme(centerTitle: true),
+        colorSchemeSeed: _primaryColor,
+        brightness: Brightness.dark,
+        fontFamily: 'sans-serif',
       ),
       home: const HomeScreen(),
     );
