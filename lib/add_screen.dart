@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 
 class AddScreen extends StatefulWidget {
   final Map<String, dynamic>? editData;
-  const AddScreen({super.key, this.editData});
+  final List<String> genres; // ホームからカテゴリリストを受け取る
+  const AddScreen({super.key, this.editData, required this.genres});
 
   @override
   State<AddScreen> createState() => _AddScreenState();
@@ -13,19 +14,15 @@ class _AddScreenState extends State<AddScreen> {
   final _priceController = TextEditingController();
   int _selectedMonth = 1;
   int _selectedDay = 1;
-  String _selectedGenre = '動画';
+  late String _selectedGenre;
   bool _isYearly = false;
   bool _includeInMonthly = true;
-  bool _isReviewing = false; // ★追加：解約検討中フラグ
-
-  final List<String> _genres = [
-    '動画', '音楽', 'ゲーム', '仕事', 'ツール', 
-    '携帯代', 'クレカ', '家賃', '光熱費', '保険', 'その他'
-  ];
+  bool _isReviewing = false;
 
   @override
   void initState() {
     super.initState();
+    _selectedGenre = widget.genres.first; // 初期値をリストの最初に設定
     if (widget.editData != null) {
       _nameController.text = widget.editData!['name'];
       _priceController.text = widget.editData!['price'].toString();
@@ -34,7 +31,7 @@ class _AddScreenState extends State<AddScreen> {
       _selectedGenre = widget.editData!['genre'];
       _isYearly = widget.editData!['isYearly'] ?? false;
       _includeInMonthly = widget.editData!['includeInMonthly'] ?? true;
-      _isReviewing = widget.editData!['isReviewing'] ?? false; // ★追加
+      _isReviewing = widget.editData!['isReviewing'] ?? false;
     }
   }
 
@@ -50,76 +47,35 @@ class _AddScreenState extends State<AddScreen> {
           TextField(controller: _priceController, decoration: const InputDecoration(labelText: '金額', border: OutlineInputBorder()), keyboardType: TextInputType.number),
           const SizedBox(height: 20),
           
-          const Text('設定', style: TextStyle(fontWeight: FontWeight.bold)),
-          SwitchListTile(
-            title: const Text('月額換算の合計に含める'),
-            value: _includeInMonthly,
-            onChanged: (val) => setState(() => _includeInMonthly = val),
-          ),
-          // ★追加：解約検討スイッチ
-          SwitchListTile(
-            title: const Text('解約を検討している'),
-            subtitle: const Text('検討リストとしてマークします'),
-            activeColor: Colors.orange,
-            value: _isReviewing,
-            onChanged: (val) => setState(() => _isReviewing = val),
-          ),
+          SwitchListTile(title: const Text('合計に含める'), value: _includeInMonthly, onChanged: (v) => setState(() => _includeInMonthly = v)),
+          SwitchListTile(title: const Text('解約を検討中'), activeColor: Colors.orange, value: _isReviewing, onChanged: (v) => setState(() => _isReviewing = v)),
           const Divider(),
 
-          const Text('支払いサイクル', style: TextStyle(fontWeight: FontWeight.bold)),
-          Row(
-            children: [
-              ChoiceChip(label: const Text('月払い'), selected: !_isYearly, onSelected: (val) => setState(() => _isYearly = false)),
-              const SizedBox(width: 10),
-              ChoiceChip(label: const Text('年払い'), selected: _isYearly, onSelected: (val) => setState(() => _isYearly = true)),
-            ],
-          ),
+          const Text('サイクル', style: TextStyle(fontWeight: FontWeight.bold)),
+          Row(children: [
+            ChoiceChip(label: const Text('月払い'), selected: !_isYearly, onSelected: (v) => setState(() => _isYearly = false)),
+            const SizedBox(width: 10),
+            ChoiceChip(label: const Text('年払い'), selected: _isYearly, onSelected: (v) => setState(() => _isYearly = true)),
+          ]),
           const SizedBox(height: 20),
 
           if (_isYearly) ...[
-            const Text('更新月', style: TextStyle(fontWeight: FontWeight.bold)),
-            DropdownButton<int>(
-              value: _selectedMonth,
-              items: List.generate(12, (i) => DropdownMenuItem(value: i + 1, child: Text('${i + 1}月'))),
-              onChanged: (val) => setState(() => _selectedMonth = val!),
-            ),
-            const SizedBox(height: 20),
+            DropdownButton<int>(value: _selectedMonth, items: List.generate(12, (i) => DropdownMenuItem(value: i + 1, child: Text('${i + 1}月'))), onChanged: (v) => setState(() => _selectedMonth = v!)),
           ],
-
-          Text(_isYearly ? '更新日' : '支払日 (毎月)', style: const TextStyle(fontWeight: FontWeight.bold)),
-          DropdownButton<int>(
-            value: _selectedDay,
-            items: List.generate(31, (i) => DropdownMenuItem(value: i + 1, child: Text('${i + 1}日'))),
-            onChanged: (val) => setState(() => _selectedDay = val!),
-          ),
+          DropdownButton<int>(value: _selectedDay, items: List.generate(31, (i) => DropdownMenuItem(value: i + 1, child: Text('${i + 1}日'))), onChanged: (v) => setState(() => _selectedDay = v!)),
           const SizedBox(height: 20),
           
-          const Text('ジャンル', style: TextStyle(fontWeight: FontWeight.bold)),
-          Wrap(
-            spacing: 8, runSpacing: 8,
-            children: _genres.map((g) => ChoiceChip(
-              label: Text(g),
-              selected: _selectedGenre == g,
-              onSelected: (val) => setState(() => _selectedGenre = g),
-            )).toList(),
-          ),
+          const Text('カテゴリ', style: TextStyle(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          Wrap(spacing: 8, runSpacing: 8, children: widget.genres.map((g) => ChoiceChip(label: Text(g), selected: _selectedGenre == g, onSelected: (v) => setState(() => _selectedGenre = g))).toList()),
           const SizedBox(height: 40),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 50)),
-            onPressed: () {
-              if (_nameController.text.isEmpty || _priceController.text.isEmpty) return;
-              Navigator.pop(context, {
-                'name': _nameController.text,
-                'price': int.parse(_priceController.text),
-                'month': _selectedMonth,
-                'day': _selectedDay,
-                'genre': _selectedGenre,
-                'isYearly': _isYearly,
-                'includeInMonthly': _includeInMonthly,
-                'isReviewing': _isReviewing, // ★追加
-              });
-            },
-            child: const Text('保存する', style: TextStyle(fontSize: 18)),
+            onPressed: () => Navigator.pop(context, {
+              'name': _nameController.text, 'price': int.parse(_priceController.text),
+              'month': _selectedMonth, 'day': _selectedDay, 'genre': _selectedGenre,
+              'isYearly': _isYearly, 'includeInMonthly': _includeInMonthly, 'isReviewing': _isReviewing,
+            }),
+            child: const Text('保存'),
           ),
         ],
       ),
