@@ -3,7 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
 import 'dart:convert';
-import 'dart:html' as html; // CSV出力用
+import 'dart:html' as html;
 import 'add_screen.dart';
 import 'main.dart';
 
@@ -14,7 +14,6 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  // --- 状態管理 ---
   List<Map<String, dynamic>> _subs = [];
   List<String> _genres = ['動画', '音楽', '携帯代', '家賃', 'その他'];
   Map<String, int> _genreColors = {};
@@ -22,6 +21,15 @@ class _HomeScreenState extends State<HomeScreen> {
   String _sortBy = 'date';
   bool _isYearlyView = false;
   final _formatter = NumberFormat('#,###');
+
+  // ★復活！こだわりの21色パレット
+  final List<Color> themeColors = [
+    Colors.blue, Colors.red, Colors.green, Colors.orange, Colors.purple, Colors.pink, Colors.teal,
+    const Color(0xFF90CAF9), const Color(0xFFA5D6A7), const Color(0xFFF48FB1), 
+    const Color(0xFFCE93D8), const Color(0xFFFFCC80), const Color(0xFFFFF59D), const Color(0xFF80DEEA),
+    const Color(0xFF000080), const Color(0xFF000000), const Color(0xFF1A237E),
+    const Color(0xFF0D47A1), const Color(0xFF004D40), const Color(0xFF37474F), const Color(0xFF212121),
+  ];
 
   @override
   void initState() {
@@ -47,17 +55,10 @@ class _HomeScreenState extends State<HomeScreen> {
     await prefs.setString('genre_colors', json.encode(_genreColors));
   }
 
-  // --- 便利機能 ---
-  void _exportToCSV() {
-    String csv = '\uFEFF名前,金額,サイクル,更新月,更新日,ジャンル,計上,検討中\n';
-    for (var sub in _subs) {
-      csv += '${sub['name']},${sub['price']},${sub['isYearly'] ? "年" : "月"},${sub['month'] ?? ""},${sub['day']},${sub['genre']},${sub['includeInMonthly'] ? "込" : "外"},${sub['isReviewing'] ? "検討中" : ""}\n';
-    }
-    final bytes = utf8.encode(csv);
-    final blob = html.Blob([bytes], 'text/csv');
-    final url = html.Url.createObjectUrlFromBlob(blob);
-    html.AnchorElement(href: url)..setAttribute("download", "subsc_data.csv")..click();
-    html.Url.revokeObjectUrl(url);
+  // --- 便利計算 ---
+  Color _getGenreColor(String genre) {
+    if (_genreColors.containsKey(genre)) return Color(_genreColors[genre]!);
+    return Colors.grey.shade400;
   }
 
   int _calculateDaysUntil(int? month, int day, bool isYearly) {
@@ -72,11 +73,6 @@ class _HomeScreenState extends State<HomeScreen> {
       if (nextDate.isBefore(today)) nextDate = DateTime(now.year, now.month + 1, day);
     }
     return nextDate.difference(today).inDays;
-  }
-
-  Color _getGenreColor(String genre) {
-    if (_genreColors.containsKey(genre)) return Color(_genreColors[genre]!);
-    return Colors.grey.shade400;
   }
 
   int get _totalMonthlyPrice {
@@ -106,7 +102,20 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  // --- メインUI ---
+  // --- CSV出力 ---
+  void _exportToCSV() {
+    String csv = '\uFEFF名前,金額,サイクル,更新月,更新日,ジャンル,計上,検討中\n';
+    for (var sub in _subs) {
+      csv += '${sub['name']},${sub['price']},${sub['isYearly'] ? "年" : "月"},${sub['month'] ?? ""},${sub['day']},${sub['genre']},${sub['includeInMonthly'] ? "込" : "外"},${sub['isReviewing'] ? "検討中" : ""}\n';
+    }
+    final bytes = utf8.encode(csv);
+    final blob = html.Blob([bytes], 'text/csv');
+    final url = html.Url.createObjectUrlFromBlob(blob);
+    html.AnchorElement(href: url)..setAttribute("download", "subsc_data.csv")..click();
+    html.Url.revokeObjectUrl(url);
+  }
+
+  // --- UI構成 ---
   @override
   Widget build(BuildContext context) {
     bool isDark = Theme.of(context).brightness == Brightness.dark;
@@ -121,7 +130,7 @@ class _HomeScreenState extends State<HomeScreen> {
             IconButton(icon: const Icon(Icons.category_rounded), onPressed: _showGenreManagement),
             IconButton(icon: const Icon(Icons.tune_rounded), onPressed: () => _showSettings(isDark)),
           ],
-          bottom: const TabBar(tabs: [Tab(text: '一覧'), Tab(text: '分析レポート')]),
+          bottom: const TabBar(tabs: [Tab(text: '一覧'), Tab(text: '分析')]),
         ),
         body: TabBarView(
           children: [
@@ -165,15 +174,15 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Column(children: [
         Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
           Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(_isYearlyView ? '年間合計' : '月間合計', style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.bold)),
+            Text(_isYearlyView ? '計上対象の年額' : '計上対象の月額', style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.bold)),
             Text('${_formatter.format(displayPrice)} 円', style: const TextStyle(fontSize: 36, color: Colors.white, fontWeight: FontWeight.w900)),
           ]),
-          const Icon(Icons.account_balance_wallet, color: Colors.white30, size: 48),
+          const Icon(Icons.auto_graph_rounded, color: Colors.white30, size: 48),
         ]),
         if (displayReviewPrice > 0) ...[
-          const Divider(color: Colors.white24),
+          const Divider(color: Colors.white24, height: 20),
           Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-            const Text('解約検討中の節約可能額:', style: TextStyle(color: Colors.orangeAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+            const Text('検討中サービスの合計:', style: TextStyle(color: Colors.orangeAccent, fontSize: 13, fontWeight: FontWeight.bold)),
             Text('- ${_formatter.format(displayReviewPrice)} 円', style: const TextStyle(color: Colors.orangeAccent, fontSize: 16, fontWeight: FontWeight.w900)),
           ]),
         ]
@@ -184,10 +193,10 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildToggleSwitch() {
     return SegmentedButton<bool>(
       segments: const [
-        ButtonSegment(value: false, label: Text('月額表示'), icon: Icon(Icons.calendar_month)),
-        ButtonSegment(value: true, label: Text('年額表示'), icon: Icon(Icons.event_note)),
+        ButtonSegment(value: false, label: Text('月額'), icon: Icon(Icons.calendar_month)),
+        ButtonSegment(value: true, label: Text('年額'), icon: Icon(Icons.event_note)),
       ],
-      selected: {_isYearlyView},
+      selected: <bool>{_isYearlyView},
       onSelectionChanged: (set) => setState(() => _isYearlyView = set.first),
     );
   }
@@ -207,10 +216,10 @@ class _HomeScreenState extends State<HomeScreen> {
           color: reviewing ? Colors.orange.withOpacity(0.1) : (include ? Theme.of(context).colorScheme.surfaceContainerLow : Colors.grey.withOpacity(0.1)),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: reviewing ? Colors.orange : Colors.transparent)),
           child: ListTile(
-            leading: CircleAvatar(backgroundColor: _getGenreColor(item['genre']), child: const Icon(Icons.star, size: 16, color: Colors.white)),
-            title: Text(item['name'], style: TextStyle(fontWeight: FontWeight.bold, decoration: include ? null : TextDecoration.lineThrough)),
-            subtitle: Text('あと $diff日${reviewing ? " (検討中)" : ""}'),
-            trailing: Text('${_formatter.format(itemPrice)}円', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+            leading: CircleAvatar(backgroundColor: _getGenreColor(item['genre']), child: const Icon(Icons.star, size: 14, color: Colors.white)),
+            title: Text(item['name'], style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16, decoration: include ? null : TextDecoration.lineThrough, color: include ? null : Colors.grey)),
+            subtitle: Text('あと $diff日${reviewing ? " (⚠️検討中)" : ""}'),
+            trailing: Text('${_formatter.format(itemPrice)}円', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, letterSpacing: -0.5)),
             onTap: () => _openAddScreen(index: _subs.indexOf(item)),
             onLongPress: () => _deleteSub(_subs.indexOf(item)),
           ),
@@ -239,16 +248,15 @@ class _HomeScreenState extends State<HomeScreen> {
             titleStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
           )).toList(),
         ))),
-        const SizedBox(height: 20),
         Padding(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.all(24),
           child: Wrap(spacing: 12, runSpacing: 12, children: totals.keys.map((g) => Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
             decoration: BoxDecoration(color: _getGenreColor(g).withOpacity(0.1), borderRadius: BorderRadius.circular(20), border: Border.all(color: _getGenreColor(g).withOpacity(0.5))),
             child: Row(mainAxisSize: MainAxisSize.min, children: [
               CircleAvatar(radius: 5, backgroundColor: _getGenreColor(g)),
               const SizedBox(width: 8),
-              Text('$g: ${_formatter.format(totals[g])}円', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+              Text('$g: ${_formatter.format(totals[g])}円', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
             ]),
           )).toList()),
         ),
@@ -256,7 +264,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // --- モーダル管理 ---
+  // --- カテゴリ管理・色選択 ---
   void _showGenreManagement() {
     showModalBottomSheet(
       context: context, isScrollControlled: true,
@@ -264,23 +272,23 @@ class _HomeScreenState extends State<HomeScreen> {
       builder: (context) => StatefulBuilder(builder: (context, setModalState) => Container(
         padding: const EdgeInsets.all(24), height: 600,
         child: Column(children: [
-          const Text('カテゴリと色を管理', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
+          const Text('カテゴリと色', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
           const SizedBox(height: 16),
           Expanded(child: ListView.builder(
             itemCount: _genres.length,
             itemBuilder: (context, i) => ListTile(
               leading: GestureDetector(
                 onTap: () => _pickGenreColor(_genres[i], setModalState),
-                child: CircleAvatar(backgroundColor: _getGenreColor(_genres[i]), child: const Icon(Icons.edit, size: 14, color: Colors.white)),
+                child: CircleAvatar(backgroundColor: _getGenreColor(_genres[i]), child: const Icon(Icons.palette, size: 14, color: Colors.white)),
               ),
               title: Text(_genres[i], style: const TextStyle(fontWeight: FontWeight.bold)),
-              trailing: IconButton(icon: const Icon(Icons.delete_sweep, color: Colors.red), onPressed: () {
+              trailing: IconButton(icon: const Icon(Icons.remove_circle_outline, color: Colors.red), onPressed: () {
                 setState(() { setModalState(() => _genres.removeAt(i)); _saveAllData(); });
               }),
             ),
           )),
           TextField(
-            decoration: const InputDecoration(hintText: '新しいカテゴリ名を追加...', suffixIcon: Icon(Icons.add_circle)),
+            decoration: const InputDecoration(hintText: 'カテゴリを追加...', suffixIcon: Icon(Icons.add)),
             onSubmitted: (val) { if (val.isNotEmpty) setState(() { setModalState(() => _genres.add(val)); _saveAllData(); }); },
           ),
         ]),
@@ -289,13 +297,15 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _pickGenreColor(String genre, StateSetter setModalState) {
-    final colors = [Colors.red, Colors.blue, Colors.green, Colors.orange, Colors.purple, Colors.pink, Colors.teal, Colors.black, Colors.grey, Colors.cyan, Colors.indigo, Colors.brown];
     showDialog(context: context, builder: (context) => AlertDialog(
-      title: Text('$genre の色を選択'),
-      content: Wrap(spacing: 12, runSpacing: 12, children: colors.map((c) => GestureDetector(
-        onTap: () { setState(() { setModalState(() => _genreColors[genre] = c.value); _saveAllData(); }); Navigator.pop(context); },
-        child: CircleAvatar(backgroundColor: c, radius: 24),
-      )).toList()),
+      title: Text('$genre の色'),
+      content: SizedBox(
+        width: 300,
+        child: Wrap(spacing: 10, runSpacing: 10, children: themeColors.map((c) => GestureDetector(
+          onTap: () { setState(() { setModalState(() => _genreColors[genre] = c.value); _saveAllData(); }); Navigator.pop(context); },
+          child: CircleAvatar(backgroundColor: c, radius: 22),
+        )).toList()),
+      ),
     ));
   }
 
@@ -304,13 +314,13 @@ class _HomeScreenState extends State<HomeScreen> {
       padding: const EdgeInsets.all(24),
       child: Column(mainAxisSize: MainAxisSize.min, children: [
         SwitchListTile(title: const Text('ダークモード'), secondary: const Icon(Icons.dark_mode), value: isDark, onChanged: (v) { MyApp.of(context)?.toggleDarkMode(v); Navigator.pop(context); }),
-        ListTile(leading: const Icon(Icons.download), title: const Text('CSVでエクスポート'), onTap: () { _exportToCSV(); Navigator.pop(context); }),
+        ListTile(leading: const Icon(Icons.download), title: const Text('CSV保存'), onTap: () { _exportToCSV(); Navigator.pop(context); }),
         const Divider(),
-        const Text('テーマカラー'),
+        const Text('テーマカラー設定 (21色)', style: TextStyle(fontWeight: FontWeight.bold)),
         const SizedBox(height: 10),
-        SizedBox(height: 50, child: ListView(scrollDirection: Axis.horizontal, children: [Colors.blue, Colors.red, Colors.green, Colors.purple, Colors.orange, Colors.black].map((c) => GestureDetector(
+        SizedBox(height: 120, child: GridView.count(crossAxisCount: 7, children: themeColors.map((c) => GestureDetector(
           onTap: () { MyApp.of(context)?.changeColor(c); Navigator.pop(context); },
-          child: Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: CircleAvatar(backgroundColor: c)),
+          child: Padding(padding: const EdgeInsets.all(4), child: CircleAvatar(backgroundColor: c)),
         )).toList())),
       ]),
     ));
@@ -318,8 +328,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _deleteSub(int i) {
     showDialog(context: context, builder: (context) => AlertDialog(
-      title: const Text('削除'), content: const Text('消しちゃいますか？'),
-      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('戻る')),
+      title: const Text('削除確認'), content: const Text('このサブスクを削除しますか？'),
+      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('キャンセル')),
       TextButton(onPressed: () async { setState(() => _subs.removeAt(i)); await _saveAllData(); Navigator.pop(context); }, child: const Text('削除', style: TextStyle(color: Colors.red)))],
     ));
   }
