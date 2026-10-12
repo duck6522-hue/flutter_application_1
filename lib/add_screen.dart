@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'app_pill.dart';
 
 class AddScreen extends StatefulWidget {
   final Map<String, dynamic>? editData;
@@ -53,9 +54,9 @@ class _AddScreenState extends State<AddScreen> {
 
           const Text('サイクル', style: TextStyle(fontWeight: FontWeight.bold)),
           Row(children: [
-            ChoiceChip(label: const Text('月払い'), selected: !_isYearly, onSelected: (v) => setState(() => _isYearly = false)),
+            AppPill(label: '月払い', selected: !_isYearly, onTap: () => setState(() => _isYearly = false)),
             const SizedBox(width: 10),
-            ChoiceChip(label: const Text('年払い'), selected: _isYearly, onSelected: (v) => setState(() => _isYearly = true)),
+            AppPill(label: '年払い', selected: _isYearly, onTap: () => setState(() => _isYearly = true)),
           ]),
           const SizedBox(height: 20),
 
@@ -67,7 +68,7 @@ class _AddScreenState extends State<AddScreen> {
           
           const Text('カテゴリ', style: TextStyle(fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
-          Wrap(spacing: 8, runSpacing: 8, children: widget.genres.map((g) => ChoiceChip(label: Text(g), selected: _selectedGenre == g, onSelected: (v) => setState(() => _selectedGenre = g))).toList()),
+          Wrap(spacing: 8, runSpacing: 8, children: widget.genres.map((g) => AppPill(label: g, selected: _selectedGenre == g, onTap: () => setState(() => _selectedGenre = g))).toList()),
           const SizedBox(height: 40),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, {
