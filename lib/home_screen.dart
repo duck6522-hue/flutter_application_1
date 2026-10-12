@@ -23,6 +23,7 @@ class _HomeScreenState extends State<HomeScreen> {
   String _searchQuery = '';
   String _sortBy = 'date';
   String? _filterGenre; // nullなら全カテゴリ
+  int _touchedIndex = -1; // 分析グラフでタップ中のカテゴリ
   bool _isYearlyView = false;
   final _formatter = NumberFormat('#,###');
 
@@ -388,39 +389,138 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildAnalysisTab() {
-    Map<String, int> totals = {};
-    for (var item in _subs) {
-      if (!(item['includeInMonthly'] ?? true)) continue;
-      int p = (item['isYearly'] ?? false) ? (item['price'] / 12).round() : item['price'] as int;
-      totals[item['genre']] = (totals[item['genre']] ?? 0) + (_isYearlyView ? p * 12 : p);
-    }
-    if (totals.isEmpty) return const Center(child: Text('分析データがありません'));
+  Widget _analysisCard({required String title, required Widget child}) {
+    final cs = Theme.of(context).colorScheme;
+    return Card(
+      margin: const EdgeInsets.fromLTRB(16, 6, 16, 10),
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(title, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: cs.onSurfaceVariant)),
+          const SizedBox(height: 14),
+          child,
+        ]),
+      ),
+    );
+  }
 
-    return SingleChildScrollView(
-      child: Column(children: [
-        const SizedBox(height: 30),
-        SizedBox(height: 280, child: PieChart(PieChartData(
-          startDegreeOffset: 270, sectionsSpace: 4, centerSpaceRadius: 60,
-          sections: totals.entries.map((e) => PieChartSectionData(
-            color: _getGenreColor(e.key), value: e.value.toDouble(), radius: 70,
-            title: '${(e.value / (_isYearlyView ? _totalMonthlyPrice * 12 : _totalMonthlyPrice) * 100).toStringAsFixed(1)}%',
-            titleStyle: TextStyle(color: _onColor(_getGenreColor(e.key)), fontWeight: FontWeight.bold, fontSize: 12),
-          )).toList(),
-        ))),
-        Padding(
-          padding: const EdgeInsets.all(24),
-          child: Wrap(spacing: 12, runSpacing: 12, children: totals.keys.map((g) => Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            decoration: BoxDecoration(color: _getGenreColor(g).withOpacity(0.15), borderRadius: BorderRadius.circular(20), border: Border.all(color: _getGenreColor(g).withOpacity(0.6))),
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              CircleAvatar(radius: 5, backgroundColor: _getGenreColor(g)),
-              const SizedBox(width: 8),
-              Text('$g: ${_formatter.format(totals[g])}円', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-            ]),
-          )).toList()),
+  // 横棒1本分: 色マーク + 名前 + 棒 + 金額/割合
+  Widget _barRow({required String label, required Color color, required double ratio, required String amount, String? sub, bool active = true}) {
+    final cs = Theme.of(context).colorScheme;
+    return Opacity(
+      opacity: active ? 1 : 0.4,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 7),
+        child: Column(children: [
+          Row(children: [
+            Container(width: 10, height: 10, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+            const SizedBox(width: 8),
+            Expanded(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w700))),
+            Text(amount, style: const TextStyle(fontWeight: FontWeight.w900)),
+            if (sub != null) SizedBox(width: 52, child: Text(sub, textAlign: TextAlign.right, style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant, fontWeight: FontWeight.bold))),
+          ]),
+          const SizedBox(height: 6),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: LinearProgressIndicator(value: ratio.clamp(0.0, 1.0), minHeight: 8, color: color, backgroundColor: cs.onSurface.withOpacity(0.08)),
+          ),
+        ]),
+      ),
+    );
+  }
+
+  Widget _buildAnalysisTab() {
+    final cs = Theme.of(context).colorScheme;
+    final mul = _isYearlyView ? 12 : 1;
+    int monthlyOf(Map<String, dynamic> item) => (item['isYearly'] ?? false) ? (item['price'] / 12).round() : item['price'] as int;
+
+    final counted = _subs.where((i) => i['includeInMonthly'] ?? true).toList();
+    final Map<String, int> totals = {};
+    for (var item in counted) {
+      totals[item['genre']] = (totals[item['genre']] ?? 0) + monthlyOf(item) * mul;
+    }
+    if (totals.isEmpty) {
+      return Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Icon(Icons.donut_large_rounded, size: 56, color: cs.onSurfaceVariant),
+        const SizedBox(height: 8),
+        Text('分析データがありません', style: TextStyle(color: cs.onSurfaceVariant, fontWeight: FontWeight.bold)),
+      ]));
+    }
+    final entries = totals.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+    final total = entries.fold<int>(0, (sum, e) => sum + e.value);
+    final top = counted.toList()..sort((a, b) => monthlyOf(b).compareTo(monthlyOf(a)));
+    final topItems = top.take(5).toList();
+    final touched = (_touchedIndex >= 0 && _touchedIndex < entries.length) ? entries[_touchedIndex] : null;
+    final unitLabel = _isYearlyView ? '年間合計' : '月間合計';
+
+    return ListView(
+      padding: const EdgeInsets.only(top: 10, bottom: 96),
+      children: [
+        _analysisCard(
+          title: 'カテゴリ別の割合',
+          child: Column(children: [
+            SizedBox(
+              height: 240,
+              child: Stack(alignment: Alignment.center, children: [
+                PieChart(PieChartData(
+                  startDegreeOffset: 270, sectionsSpace: 3, centerSpaceRadius: 82,
+                  borderData: FlBorderData(show: false),
+                  pieTouchData: PieTouchData(touchCallback: (event, resp) {
+                    final i = resp?.touchedSection?.touchedSectionIndex ?? -1;
+                    if (!event.isInterestedForInteractions || i < 0) {
+                      if (_touchedIndex != -1) setState(() => _touchedIndex = -1);
+                    } else if (i != _touchedIndex) {
+                      setState(() => _touchedIndex = i);
+                    }
+                  }),
+                  sections: List.generate(entries.length, (i) => PieChartSectionData(
+                    color: _getGenreColor(entries[i].key),
+                    value: entries[i].value.toDouble(),
+                    radius: _touchedIndex == i ? 36 : 28,
+                    showTitle: false,
+                  )),
+                )),
+                // 中心: 合計 or タップ中カテゴリの詳細
+                Column(mainAxisSize: MainAxisSize.min, children: [
+                  Text(touched?.key ?? unitLabel, style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: cs.onSurfaceVariant)),
+                  const SizedBox(height: 2),
+                  Text('${_formatter.format(touched?.value ?? total)}円', style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w900, letterSpacing: -0.5)),
+                  if (touched != null)
+                    Text('${(touched.value / total * 100).toStringAsFixed(1)}%', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: _getGenreColor(touched.key))),
+                ]),
+              ]),
+            ),
+            Text('リングをタップすると詳細が見られます', style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant)),
+          ]),
         ),
-      ]),
+        _analysisCard(
+          title: 'カテゴリ別ランキング',
+          child: Column(children: List.generate(entries.length, (i) {
+            final e = entries[i];
+            return GestureDetector(
+              onTap: () => setState(() => _touchedIndex = _touchedIndex == i ? -1 : i),
+              behavior: HitTestBehavior.opaque,
+              child: _barRow(
+                label: e.key, color: _getGenreColor(e.key), ratio: e.value / entries.first.value,
+                amount: '${_formatter.format(e.value)}円', sub: '${(e.value / total * 100).toStringAsFixed(0)}%',
+                active: _touchedIndex == -1 || _touchedIndex == i,
+              ),
+            );
+          })),
+        ),
+        _analysisCard(
+          title: '高いサブスク TOP${topItems.length}',
+          child: Column(children: [
+            for (final item in topItems)
+              _barRow(
+                label: item['name'], color: _getGenreColor(item['genre']),
+                ratio: monthlyOf(item) / monthlyOf(topItems.first),
+                amount: '${_formatter.format(monthlyOf(item) * mul)}円',
+                sub: '${(monthlyOf(item) * mul / total * 100).toStringAsFixed(0)}%',
+              ),
+          ]),
+        ),
+      ],
     );
   }
 
