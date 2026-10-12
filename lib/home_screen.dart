@@ -21,6 +21,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Map<String, int> _genreColors = {};
   String _searchQuery = '';
   String _sortBy = 'date';
+  String? _filterGenre; // nullなら全カテゴリ
   bool _isYearlyView = false;
   final _formatter = NumberFormat('#,###');
 
@@ -122,7 +123,9 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     bool isDark = Theme.of(context).brightness == Brightness.dark;
-    final filteredSubs = _subs.where((sub) => sub['name'].toLowerCase().contains(_searchQuery.toLowerCase())).toList();
+    final filteredSubs = _subs.where((sub) =>
+        sub['name'].toLowerCase().contains(_searchQuery.toLowerCase()) &&
+        (_filterGenre == null || sub['genre'] == _filterGenre)).toList();
 
     return DefaultTabController(
       length: 2,
@@ -143,18 +146,6 @@ class _HomeScreenState extends State<HomeScreen> {
         body: TabBarView(
           children: [
             Column(children: [
-              _buildSummaryHeader(),
-              _buildToggleSwitch(),
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: TextField(
-                  decoration: InputDecoration(
-                    hintText: 'サービス名で検索...', prefixIcon: const Icon(Icons.search),
-                    filled: true, border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
-                  ),
-                  onChanged: (v) => setState(() => _searchQuery = v),
-                ),
-              ),
               Expanded(child: _buildListView(filteredSubs)),
             ]),
             _buildAnalysisTab(),
@@ -199,37 +190,171 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildToggleSwitch() {
-    return SegmentedButton<bool>(
-      segments: const [
-        ButtonSegment(value: false, label: Text('月額表示'), icon: Icon(Icons.calendar_month)),
-        ButtonSegment(value: true, label: Text('年額表示'), icon: Icon(Icons.event_note)),
-      ],
-      selected: <bool>{_isYearlyView},
-      onSelectionChanged: (set) => setState(() => _isYearlyView = set.first),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: SizedBox(
+        width: double.infinity,
+        child: SegmentedButton<bool>(
+          segments: const [
+            ButtonSegment(value: false, label: Text('月額表示'), icon: Icon(Icons.calendar_month)),
+            ButtonSegment(value: true, label: Text('年額表示'), icon: Icon(Icons.event_note)),
+          ],
+          selected: <bool>{_isYearlyView},
+          onSelectionChanged: (set) => setState(() => _isYearlyView = set.first),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSearchField() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      child: TextField(
+        decoration: InputDecoration(
+          hintText: 'サービス名で検索...', prefixIcon: const Icon(Icons.search),
+          filled: true, isDense: true,
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
+        ),
+        onChanged: (v) => setState(() => _searchQuery = v),
+      ),
+    );
+  }
+
+  // カテゴリ絞り込み + 並び替え
+  Widget _buildFilterBar() {
+    return Column(children: [
+      SizedBox(
+        height: 44,
+        child: ListView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: ChoiceChip(label: const Text('すべて'), selected: _filterGenre == null, onSelected: (_) => setState(() => _filterGenre = null)),
+            ),
+            ..._genres.map((g) => Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: ChoiceChip(
+                avatar: CircleAvatar(radius: 6, backgroundColor: _getGenreColor(g)),
+                label: Text(g),
+                selected: _filterGenre == g,
+                onSelected: (v) => setState(() => _filterGenre = v ? g : null),
+              ),
+            )),
+          ],
+        ),
+      ),
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Row(children: [
+          Text('${_subs.length}件', style: const TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
+          const Spacer(),
+          const Icon(Icons.sort, size: 18, color: Colors.grey),
+          const SizedBox(width: 4),
+          DropdownButton<String>(
+            value: _sortBy, underline: const SizedBox.shrink(), isDense: true,
+            items: const [
+              DropdownMenuItem(value: 'date', child: Text('支払日が近い順')),
+              DropdownMenuItem(value: 'price', child: Text('金額が高い順')),
+            ],
+            onChanged: (v) { if (v != null) { _sortBy = v; _sortList(); } },
+          ),
+        ]),
+      ),
+    ]);
+  }
+
+  // 支払日までの日数に応じたバッジ
+  Widget _buildDaysBadge(int diff) {
+    final Color c = diff <= 3 ? Colors.red : (diff <= 7 ? Colors.orange : Colors.blueGrey);
+    final String label = diff == 0 ? '今日' : 'あと$diff日';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(color: c.withOpacity(0.15), borderRadius: BorderRadius.circular(10)),
+      child: Text(label, style: TextStyle(color: c, fontSize: 12, fontWeight: FontWeight.w900)),
+    );
+  }
+
+  Widget _buildTag(String text, Color c, {IconData? icon}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(color: c.withOpacity(0.12), borderRadius: BorderRadius.circular(10)),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        if (icon != null) ...[Icon(icon, size: 12, color: c), const SizedBox(width: 3)],
+        Text(text, style: TextStyle(color: c, fontSize: 11, fontWeight: FontWeight.bold)),
+      ]),
     );
   }
 
   Widget _buildListView(List<Map<String, dynamic>> list) {
     return ListView.builder(
-      itemCount: list.length,
+      padding: const EdgeInsets.only(bottom: 96), // FABと重ならない余白
+      itemCount: list.length + 1,
       itemBuilder: (context, index) {
-        final item = list[index];
-        bool include = item['includeInMonthly'] ?? true;
-        bool reviewing = item['isReviewing'] ?? false;
-        int diff = _calculateDaysUntil(item['month'], item['day'], item['isYearly'] ?? false);
-        int itemPrice = _isYearlyView ? (item['isYearly'] ? item['price'] : item['price'] * 12) : (item['isYearly'] ? (item['price'] / 12).round() : item['price']);
+        if (index == 0) {
+          return Column(children: [
+            _buildSummaryHeader(),
+            _buildToggleSwitch(),
+            _buildSearchField(),
+            _buildFilterBar(),
+            if (list.isEmpty)
+              const Padding(
+                padding: EdgeInsets.all(48),
+                child: Column(children: [
+                  Icon(Icons.inbox_rounded, size: 56, color: Colors.grey),
+                  SizedBox(height: 8),
+                  Text('該当するサブスクがありません', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
+                ]),
+              ),
+          ]);
+        }
+        final item = list[index - 1];
+        final bool include = item['includeInMonthly'] ?? true;
+        final bool reviewing = item['isReviewing'] ?? false;
+        final bool yearly = item['isYearly'] ?? false;
+        final int diff = _calculateDaysUntil(item['month'], item['day'], yearly);
+        final int itemPrice = _isYearlyView ? (yearly ? item['price'] : item['price'] * 12) : (yearly ? (item['price'] / 12).round() : item['price']);
+        final Color gc = _getGenreColor(item['genre']);
+        final String dateText = yearly ? '毎年${item['month']}月${item['day']}日' : '毎月${item['day']}日';
+        final String unit = _isYearlyView ? '/年' : '/月';
 
         return Card(
-          elevation: 0, margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          elevation: 0, margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
+          clipBehavior: Clip.antiAlias,
           color: reviewing ? Colors.orange.withOpacity(0.1) : (include ? Theme.of(context).colorScheme.surfaceContainerLow : Colors.grey.withOpacity(0.1)),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: reviewing ? Colors.orange : Colors.transparent)),
-          child: ListTile(
-            leading: CircleAvatar(backgroundColor: _getGenreColor(item['genre']), child: const Icon(Icons.star, size: 14, color: Colors.white)),
-            title: Text(item['name'], style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16, decoration: include ? null : TextDecoration.lineThrough, color: include ? null : Colors.grey)),
-            subtitle: Text('あと $diff日${reviewing ? " (⚠️検討中)" : ""}'),
-            trailing: Text('${_formatter.format(itemPrice)}円', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, letterSpacing: -0.5)),
+          child: InkWell(
             onTap: () => _openAddScreen(index: _subs.indexOf(item)),
             onLongPress: () => _deleteSub(_subs.indexOf(item)),
+            child: IntrinsicHeight(
+              child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                Container(width: 6, color: gc), // カテゴリ色のライン
+                Expanded(child: Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 12, 16, 12),
+                  child: Row(children: [
+                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(item['name'], maxLines: 1, overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16, decoration: include ? null : TextDecoration.lineThrough, color: include ? null : Colors.grey)),
+                      const SizedBox(height: 6),
+                      Wrap(spacing: 6, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
+                        _buildDaysBadge(diff),
+                        Text(dateText, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                        _buildTag(item['genre'], gc),
+                        if (yearly) _buildTag('年払い', Colors.indigo),
+                        if (reviewing) _buildTag('検討中', Colors.orange, icon: Icons.warning_amber_rounded),
+                        if (!include) _buildTag('合計外', Colors.grey),
+                      ]),
+                    ])),
+                    const SizedBox(width: 8),
+                    Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.end, children: [
+                      Text('${_formatter.format(itemPrice)}円', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, letterSpacing: -0.5)),
+                      Text(unit, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                    ]),
+                  ]),
+                )),
+              ]),
+            ),
           ),
         );
       },
