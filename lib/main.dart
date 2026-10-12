@@ -31,15 +31,23 @@ class _MyAppState extends State<MyApp> {
 
   // テーマ色はシード色としてだけ使い、文字色などはMaterialに自動で決めさせる(読みやすさ優先)
   ThemeData _buildTheme(Brightness brightness) {
-    final cs = ColorScheme.fromSeed(seedColor: _primaryColor, brightness: brightness);
+    var cs = ColorScheme.fromSeed(seedColor: _primaryColor, brightness: brightness);
     final isDark = brightness == Brightness.dark;
+    if (!isDark) {
+      // ライトはテーマ色そのものの鮮やかさを使う(白文字が読める明るさまでに抑える)
+      final hsl = HSLColor.fromColor(_primaryColor);
+      final vivid = hsl.withLightness(hsl.lightness.clamp(0.28, 0.48)).withSaturation(hsl.saturation.clamp(0.45, 1.0)).toColor();
+      cs = cs.copyWith(primary: vivid, onPrimary: Colors.white, surface: Colors.white, surfaceContainerLow: const Color(0xFFF4F5F9));
+    }
+    // ライトは色味のない明るいグレー背景＋白カードですっきり見せる
+    final bg = isDark ? cs.surfaceContainerLow : const Color(0xFFF4F5F9);
     return ThemeData(
       useMaterial3: true,
       colorScheme: cs,
       fontFamily: 'sans-serif',
-      scaffoldBackgroundColor: cs.surfaceContainerLow,
+      scaffoldBackgroundColor: bg,
       appBarTheme: AppBarTheme(
-        backgroundColor: cs.surfaceContainerLow,
+        backgroundColor: bg,
         foregroundColor: cs.onSurface,
         elevation: 0,
         scrolledUnderElevation: 0,
@@ -53,13 +61,17 @@ class _MyAppState extends State<MyApp> {
         labelStyle: const TextStyle(fontWeight: FontWeight.w800),
       ),
       cardTheme: CardThemeData(
-        color: isDark ? cs.surfaceContainerHigh : cs.surface,
+        color: isDark ? cs.surfaceContainerHigh : Colors.white,
         elevation: 0,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
       ),
       chipTheme: ChipThemeData(
         side: BorderSide(color: cs.outlineVariant),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: isDark ? cs.surfaceContainerHigh : Colors.white,
       ),
       floatingActionButtonTheme: FloatingActionButtonThemeData(
         backgroundColor: cs.primary,

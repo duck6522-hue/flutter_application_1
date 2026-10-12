@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'dart:convert';
 import 'dart:html' as html;
 import 'add_screen.dart';
+import 'app_pill.dart';
 import 'main.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -167,6 +168,12 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Color _headerEnd(ColorScheme cs) {
+    if (cs.brightness == Brightness.dark) return Color.lerp(cs.primary, cs.tertiary, 0.55)!;
+    final hsl = HSLColor.fromColor(cs.primary);
+    return hsl.withHue((hsl.hue + 35) % 360).withSaturation((hsl.saturation + 0.1).clamp(0.0, 1.0)).toColor();
+  }
+
   Widget _buildSummaryHeader() {
     final cs = Theme.of(context).colorScheme;
     final on = cs.onPrimary;
@@ -177,7 +184,7 @@ class _HomeScreenState extends State<HomeScreen> {
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft, end: Alignment.bottomRight,
-          colors: [cs.primary, Color.lerp(cs.primary, cs.tertiary, 0.55)!],
+          colors: [cs.primary, _headerEnd(cs)],
         ),
         borderRadius: BorderRadius.circular(24),
         boxShadow: [BoxShadow(color: cs.primary.withOpacity(0.25), blurRadius: 16, offset: const Offset(0, 6))],
@@ -243,22 +250,20 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildFilterBar() {
     return Column(children: [
       SizedBox(
-        height: 44,
+        height: 48,
         child: ListView(
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: 16),
           children: [
             Padding(
               padding: const EdgeInsets.only(right: 8),
-              child: ChoiceChip(label: const Text('すべて'), selected: _filterGenre == null, onSelected: (_) => setState(() => _filterGenre = null)),
+              child: AppPill(label: 'すべて', selected: _filterGenre == null, onTap: () => setState(() => _filterGenre = null)),
             ),
             ..._genres.map((g) => Padding(
               padding: const EdgeInsets.only(right: 8),
-              child: ChoiceChip(
-                avatar: CircleAvatar(radius: 6, backgroundColor: _getGenreColor(g)),
-                label: Text(g),
-                selected: _filterGenre == g,
-                onSelected: (v) => setState(() => _filterGenre = v ? g : null),
+              child: AppPill(
+                label: g, dotColor: _getGenreColor(g), selected: _filterGenre == g,
+                onTap: () => setState(() => _filterGenre = _filterGenre == g ? null : g),
               ),
             )),
           ],
