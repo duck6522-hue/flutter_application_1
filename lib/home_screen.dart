@@ -60,10 +60,17 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   // --- 便利計算 ---
+  // どの背景でも見えるように、明るさを範囲内に収める(黒や薄い黄色対策)
   Color _getGenreColor(String genre) {
-    if (_genreColors.containsKey(genre)) return Color(_genreColors[genre]!);
-    return Colors.grey.shade400;
+    final base = _genreColors.containsKey(genre) ? Color(_genreColors[genre]!) : Colors.grey.shade500;
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final hsl = HSLColor.fromColor(base);
+    final l = dark ? hsl.lightness.clamp(0.55, 0.85) : hsl.lightness.clamp(0.28, 0.52);
+    return hsl.withLightness(l.toDouble()).toColor();
   }
+
+  Color _onColor(Color c) =>
+      ThemeData.estimateBrightnessForColor(c) == Brightness.dark ? Colors.white : Colors.black87;
 
   int _calculateDaysUntil(int? month, int day, bool isYearly) {
     final now = DateTime.now();
@@ -136,8 +143,8 @@ class _HomeScreenState extends State<HomeScreen> {
             // ★カテゴリ管理ボタンを分かりやすくラベル付きに（または目立つアイコンに）
             TextButton.icon(
               onPressed: _showGenreManagement,
-              icon: const Icon(Icons.category_rounded, color: Colors.white),
-              label: const Text('カテゴリ設定', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+              icon: const Icon(Icons.category_rounded),
+              label: const Text('カテゴリ設定', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
             ),
             IconButton(icon: const Icon(Icons.tune_rounded), onPressed: () => _showSettings(isDark)),
           ],
@@ -161,29 +168,41 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildSummaryHeader() {
+    final cs = Theme.of(context).colorScheme;
+    final on = cs.onPrimary;
     int displayPrice = _isYearlyView ? _totalMonthlyPrice * 12 : _totalMonthlyPrice;
     int displayReviewPrice = _isYearlyView ? _reviewTotalPrice * 12 : _reviewTotalPrice;
     return Container(
-      padding: const EdgeInsets.all(24), margin: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(22), margin: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        gradient: LinearGradient(colors: [Theme.of(context).colorScheme.primary, Theme.of(context).colorScheme.secondary]),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft, end: Alignment.bottomRight,
+          colors: [cs.primary, Color.lerp(cs.primary, cs.tertiary, 0.55)!],
+        ),
         borderRadius: BorderRadius.circular(24),
-        boxShadow: [BoxShadow(color: Theme.of(context).colorScheme.primary.withOpacity(0.3), blurRadius: 10)],
+        boxShadow: [BoxShadow(color: cs.primary.withOpacity(0.25), blurRadius: 16, offset: const Offset(0, 6))],
       ),
       child: Column(children: [
         Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(_isYearlyView ? '年間合計' : '月間合計', style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.bold)),
-            Text('${_formatter.format(displayPrice)} 円', style: const TextStyle(fontSize: 36, color: Colors.white, fontWeight: FontWeight.w900)),
-          ]),
-          const Icon(Icons.auto_graph_rounded, color: Colors.white30, size: 48),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(_isYearlyView ? '年間合計' : '月間合計', style: TextStyle(color: on.withOpacity(0.8), fontWeight: FontWeight.bold)),
+            const SizedBox(height: 2),
+            FittedBox(fit: BoxFit.scaleDown, child: Text('${_formatter.format(displayPrice)} 円', style: TextStyle(fontSize: 38, color: on, fontWeight: FontWeight.w900, letterSpacing: -1))),
+          ])),
+          Icon(Icons.auto_graph_rounded, color: on.withOpacity(0.35), size: 48),
         ]),
         if (displayReviewPrice > 0) ...[
-          const Divider(color: Colors.white24, height: 20),
-          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-            const Text('解約検討中の節約可能額:', style: TextStyle(color: Colors.orangeAccent, fontSize: 13, fontWeight: FontWeight.bold)),
-            Text('- ${_formatter.format(displayReviewPrice)} 円', style: const TextStyle(color: Colors.orangeAccent, fontSize: 16, fontWeight: FontWeight.w900)),
-          ]),
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(color: on.withOpacity(0.16), borderRadius: BorderRadius.circular(14)),
+            child: Row(children: [
+              Icon(Icons.savings_rounded, size: 18, color: on),
+              const SizedBox(width: 8),
+              Expanded(child: Text('解約すると節約できる額', style: TextStyle(color: on, fontSize: 13, fontWeight: FontWeight.bold))),
+              Text('- ${_formatter.format(displayReviewPrice)} 円', style: TextStyle(color: on, fontSize: 16, fontWeight: FontWeight.w900)),
+            ]),
+          ),
         ]
       ]),
     );
@@ -267,11 +286,14 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // 支払日までの日数に応じたバッジ
   Widget _buildDaysBadge(int diff) {
-    final Color c = diff <= 3 ? Colors.red : (diff <= 7 ? Colors.orange : Colors.blueGrey);
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final Color c = diff <= 3
+        ? (dark ? Colors.red.shade300 : Colors.red.shade700)
+        : (diff <= 7 ? (dark ? Colors.orange.shade300 : Colors.deepOrange.shade700) : Theme.of(context).colorScheme.onSurfaceVariant);
     final String label = diff == 0 ? '今日' : 'あと$diff日';
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(color: c.withOpacity(0.15), borderRadius: BorderRadius.circular(10)),
+      decoration: BoxDecoration(color: c.withOpacity(0.14), borderRadius: BorderRadius.circular(10)),
       child: Text(label, style: TextStyle(color: c, fontSize: 12, fontWeight: FontWeight.w900)),
     );
   }
@@ -279,10 +301,10 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildTag(String text, Color c, {IconData? icon}) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(color: c.withOpacity(0.12), borderRadius: BorderRadius.circular(10)),
+      decoration: BoxDecoration(color: c.withOpacity(0.22), borderRadius: BorderRadius.circular(10)),
       child: Row(mainAxisSize: MainAxisSize.min, children: [
         if (icon != null) ...[Icon(icon, size: 12, color: c), const SizedBox(width: 3)],
-        Text(text, style: TextStyle(color: c, fontSize: 11, fontWeight: FontWeight.bold)),
+        Text(text, style: TextStyle(color: Theme.of(context).colorScheme.onSurface, fontSize: 11, fontWeight: FontWeight.bold)),
       ]),
     );
   }
@@ -322,8 +344,8 @@ class _HomeScreenState extends State<HomeScreen> {
         return Card(
           elevation: 0, margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
           clipBehavior: Clip.antiAlias,
-          color: reviewing ? Colors.orange.withOpacity(0.1) : (include ? Theme.of(context).colorScheme.surfaceContainerLow : Colors.grey.withOpacity(0.1)),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: reviewing ? Colors.orange : Colors.transparent)),
+          color: reviewing ? Colors.orange.withOpacity(0.12) : (include ? null : Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.5)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: reviewing ? Colors.orange : Theme.of(context).colorScheme.outlineVariant.withOpacity(0.5))),
           child: InkWell(
             onTap: () => _openAddScreen(index: _subs.indexOf(item)),
             onLongPress: () => _deleteSub(_subs.indexOf(item)),
@@ -335,11 +357,11 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: Row(children: [
                     Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       Text(item['name'], maxLines: 1, overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16, decoration: include ? null : TextDecoration.lineThrough, color: include ? null : Colors.grey)),
+                        style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16, decoration: include ? null : TextDecoration.lineThrough, color: include ? null : Theme.of(context).colorScheme.onSurfaceVariant)),
                       const SizedBox(height: 6),
                       Wrap(spacing: 6, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
                         _buildDaysBadge(diff),
-                        Text(dateText, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                        Text(dateText, style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant)),
                         _buildTag(item['genre'], gc),
                         if (yearly) _buildTag('年払い', Colors.indigo),
                         if (reviewing) _buildTag('検討中', Colors.orange, icon: Icons.warning_amber_rounded),
@@ -349,7 +371,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     const SizedBox(width: 8),
                     Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.end, children: [
                       Text('${_formatter.format(itemPrice)}円', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, letterSpacing: -0.5)),
-                      Text(unit, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                      Text(unit, style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant)),
                     ]),
                   ]),
                 )),
@@ -378,14 +400,14 @@ class _HomeScreenState extends State<HomeScreen> {
           sections: totals.entries.map((e) => PieChartSectionData(
             color: _getGenreColor(e.key), value: e.value.toDouble(), radius: 70,
             title: '${(e.value / (_isYearlyView ? _totalMonthlyPrice * 12 : _totalMonthlyPrice) * 100).toStringAsFixed(1)}%',
-            titleStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+            titleStyle: TextStyle(color: _onColor(_getGenreColor(e.key)), fontWeight: FontWeight.bold, fontSize: 12),
           )).toList(),
         ))),
         Padding(
           padding: const EdgeInsets.all(24),
           child: Wrap(spacing: 12, runSpacing: 12, children: totals.keys.map((g) => Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            decoration: BoxDecoration(color: _getGenreColor(g).withOpacity(0.1), borderRadius: BorderRadius.circular(20), border: Border.all(color: _getGenreColor(g).withOpacity(0.5))),
+            decoration: BoxDecoration(color: _getGenreColor(g).withOpacity(0.15), borderRadius: BorderRadius.circular(20), border: Border.all(color: _getGenreColor(g).withOpacity(0.6))),
             child: Row(mainAxisSize: MainAxisSize.min, children: [
               CircleAvatar(radius: 5, backgroundColor: _getGenreColor(g)),
               const SizedBox(width: 8),
@@ -413,7 +435,7 @@ class _HomeScreenState extends State<HomeScreen> {
             itemBuilder: (context, i) => ListTile(
               leading: GestureDetector(
                 onTap: () => _pickGenreColor(_genres[i], setModalState),
-                child: CircleAvatar(backgroundColor: _getGenreColor(_genres[i]), child: const Icon(Icons.palette, size: 14, color: Colors.white)),
+                child: CircleAvatar(backgroundColor: _getGenreColor(_genres[i]), child: Icon(Icons.palette, size: 14, color: _onColor(_getGenreColor(_genres[i])))),
               ),
               title: Text(_genres[i], style: const TextStyle(fontWeight: FontWeight.bold)),
               trailing: IconButton(icon: const Icon(Icons.remove_circle_outline, color: Colors.red), onPressed: () {

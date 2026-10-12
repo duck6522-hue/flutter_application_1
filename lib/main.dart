@@ -23,31 +23,48 @@ class _MyAppState extends State<MyApp> {
       title: 'サブスク管理 Pro',
       debugShowCheckedModeBanner: false,
       themeMode: _themeMode,
-      theme: ThemeData(
-        useMaterial3: true,
-        // ★ハッキリした色にするために primary を直接指定
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: _primaryColor, 
-          primary: _primaryColor, 
-          brightness: Brightness.light
-        ),
-        fontFamily: 'sans-serif',
-        appBarTheme: AppBarTheme(
-          backgroundColor: _primaryColor,
-          foregroundColor: Colors.white,
-          elevation: 4,
-        ),
-      ),
-      darkTheme: ThemeData(
-        useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: _primaryColor, 
-          primary: _primaryColor, 
-          brightness: Brightness.dark
-        ),
-        fontFamily: 'sans-serif',
-      ),
+      theme: _buildTheme(Brightness.light),
+      darkTheme: _buildTheme(Brightness.dark),
       home: const HomeScreen(),
+    );
+  }
+
+  // テーマ色はシード色としてだけ使い、文字色などはMaterialに自動で決めさせる(読みやすさ優先)
+  ThemeData _buildTheme(Brightness brightness) {
+    final cs = ColorScheme.fromSeed(seedColor: _primaryColor, brightness: brightness);
+    final isDark = brightness == Brightness.dark;
+    return ThemeData(
+      useMaterial3: true,
+      colorScheme: cs,
+      fontFamily: 'sans-serif',
+      scaffoldBackgroundColor: cs.surfaceContainerLow,
+      appBarTheme: AppBarTheme(
+        backgroundColor: cs.surfaceContainerLow,
+        foregroundColor: cs.onSurface,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        centerTitle: false,
+      ),
+      tabBarTheme: TabBarThemeData(
+        labelColor: cs.primary,
+        unselectedLabelColor: cs.onSurfaceVariant,
+        indicatorColor: cs.primary,
+        dividerColor: cs.outlineVariant,
+        labelStyle: const TextStyle(fontWeight: FontWeight.w800),
+      ),
+      cardTheme: CardThemeData(
+        color: isDark ? cs.surfaceContainerHigh : cs.surface,
+        elevation: 0,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      ),
+      chipTheme: ChipThemeData(
+        side: BorderSide(color: cs.outlineVariant),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+      floatingActionButtonTheme: FloatingActionButtonThemeData(
+        backgroundColor: cs.primary,
+        foregroundColor: cs.onPrimary,
+      ),
     );
   }
 }
