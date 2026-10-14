@@ -89952,7 +89952,7 @@ r=A.aBp(i,i,i,i,i,i,i,i,i,i,i,i,i,i,i,i,i,i,i,new A.cF(A.hh(12),B.o),i,new A.b_(
 if(g){m=h.R8
 if(m==null)m=h.k2}else m=B.k
 m=A.aCB(i,i,m,!0)
-return A.vq(p,i,new A.oF(i,k,i,i,0,i,new A.cF(j,B.o)),r,h,A.aCc(o,i,i,i,i,i,i,i,i,i,h.c,i,i,i,i,i,i,i,i,i,i),"sans-serif",m,q,n,!0)}}
+return A.vq(p,i,new A.oF(i,k,i,i,0,i,new A.cF(j,B.o)),r,h,A.aCc(o,i,i,i,i,i,i,i,i,i,h.c,i,i,i,i,i,i,i,i,i,i),"NotoSansJP",m,q,n,!0)}}
 A.aq8.prototype={
 $0(){var s=this.b?B.Ad:B.X4
 return this.a.d=s},
