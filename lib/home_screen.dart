@@ -525,74 +525,145 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   // --- カテゴリ管理・色選択 ---
+  Widget _sheetHandle() => Center(
+    child: Container(
+      width: 40, height: 4, margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(color: Theme.of(context).colorScheme.outlineVariant, borderRadius: BorderRadius.circular(2)),
+    ),
+  );
+
   void _showGenreManagement() {
+    final addController = TextEditingController();
     showModalBottomSheet(
-      context: context, isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (context) => StatefulBuilder(builder: (context, setModalState) => Container(
-        padding: const EdgeInsets.all(24), height: 600,
-        child: Column(children: [
-          const Text('カテゴリ管理・追加', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
-          const Text('好きなカテゴリを自由に追加したり、色を塗れます', style: TextStyle(color: Colors.grey, fontSize: 12)),
-          const SizedBox(height: 24),
-          Expanded(child: ListView.builder(
-            itemCount: _genres.length,
-            itemBuilder: (context, i) => ListTile(
-              leading: GestureDetector(
-                onTap: () => _pickGenreColor(_genres[i], setModalState),
-                child: CircleAvatar(backgroundColor: _getGenreColor(_genres[i]), child: Icon(Icons.palette, size: 14, color: _onColor(_getGenreColor(_genres[i])))),
-              ),
-              title: Text(_genres[i], style: const TextStyle(fontWeight: FontWeight.bold)),
-              trailing: IconButton(icon: const Icon(Icons.remove_circle_outline, color: Colors.red), onPressed: () {
-                setState(() { setModalState(() => _genres.removeAt(i)); _saveAllData(); });
-              }),
-            ),
-          )),
-          const Divider(),
-          Padding(
-            padding: const EdgeInsets.only(bottom: 20),
-            child: TextField(
+      context: context, isScrollControlled: true, useSafeArea: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+      builder: (sheetContext) => StatefulBuilder(builder: (context, setModalState) {
+        final cs = Theme.of(context).colorScheme;
+        void addGenre() {
+          final name = addController.text.trim();
+          if (name.isEmpty) return;
+          if (_genres.contains(name)) {
+            ScaffoldMessenger.of(this.context).showSnackBar(const SnackBar(content: Text('同じ名前のカテゴリがあります'), behavior: SnackBarBehavior.floating));
+            return;
+          }
+          setState(() { setModalState(() => _genres.add(name)); _saveAllData(); });
+          addController.clear();
+        }
+        return Padding(
+          padding: EdgeInsets.fromLTRB(20, 12, 20, 16 + MediaQuery.of(context).viewInsets.bottom),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            _sheetHandle(),
+            const Text('カテゴリ設定', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
+            const SizedBox(height: 4),
+            Text('左の色の丸をタップすると色を変えられます', style: TextStyle(color: cs.onSurfaceVariant, fontSize: 12)),
+            const SizedBox(height: 16),
+            Flexible(child: ListView.separated(
+              shrinkWrap: true,
+              itemCount: _genres.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 8),
+              itemBuilder: (context, i) {
+                final g = _genres[i];
+                final used = _subs.where((e) => e['genre'] == g).length;
+                final c = _getGenreColor(g);
+                return Material(
+                  color: cs.brightness == Brightness.dark ? cs.surfaceContainerHigh : cs.surfaceContainerLow,
+                  borderRadius: BorderRadius.circular(16),
+                  child: ListTile(
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    leading: GestureDetector(
+                      onTap: () => _pickGenreColor(g, setModalState),
+                      child: Container(
+                        width: 40, height: 40,
+                        decoration: BoxDecoration(color: c, shape: BoxShape.circle),
+                        child: Icon(Icons.palette_outlined, size: 18, color: _onColor(c)),
+                      ),
+                    ),
+                    title: Text(g, style: const TextStyle(fontWeight: FontWeight.w800)),
+                    subtitle: Text(used == 0 ? '未使用' : '$used件で使用中', style: const TextStyle(fontSize: 12)),
+                    trailing: IconButton(
+                      icon: Icon(Icons.delete_outline_rounded, color: used == 0 ? cs.error : cs.outline),
+                      onPressed: () {
+                        if (used > 0) {
+                          ScaffoldMessenger.of(this.context).showSnackBar(SnackBar(content: Text('「$g」は$used件のサブスクで使用中のため削除できません'), behavior: SnackBarBehavior.floating));
+                          return;
+                        }
+                        setState(() { setModalState(() => _genres.removeAt(i)); _saveAllData(); });
+                      },
+                    ),
+                  ),
+                );
+              },
+            )),
+            const SizedBox(height: 16),
+            TextField(
+              controller: addController,
+              textInputAction: TextInputAction.done,
               decoration: InputDecoration(
-                hintText: '新しいカテゴリ名を入力...', 
-                prefixIcon: const Icon(Icons.add_box_rounded),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                hintText: '新しいカテゴリ名',
+                prefixIcon: const Icon(Icons.add_rounded),
+                suffixIcon: IconButton(icon: const Icon(Icons.check_circle_rounded), color: cs.primary, onPressed: addGenre),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
               ),
-              onSubmitted: (val) { if (val.isNotEmpty) setState(() { setModalState(() => _genres.add(val)); _saveAllData(); }); },
+              onSubmitted: (_) => addGenre(),
             ),
-          ),
-        ]),
-      )),
+          ]),
+        );
+      }),
     );
   }
 
   void _pickGenreColor(String genre, StateSetter setModalState) {
+    final current = _genreColors[genre];
     showDialog(context: context, builder: (context) => AlertDialog(
-      title: Text('$genre の色を選択'),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      title: Text('「$genre」の色', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18)),
       content: SizedBox(
-        width: 300,
-        child: Wrap(spacing: 10, runSpacing: 10, children: themeColors.map((c) => GestureDetector(
-          onTap: () { setState(() { setModalState(() => _genreColors[genre] = c.value); _saveAllData(); }); Navigator.pop(context); },
-          child: CircleAvatar(backgroundColor: c, radius: 22),
-        )).toList()),
+        width: 320,
+        child: Wrap(spacing: 12, runSpacing: 12, children: themeColors.map((c) {
+          final selected = current == c.value;
+          return GestureDetector(
+            onTap: () { setState(() { setModalState(() => _genreColors[genre] = c.value); _saveAllData(); }); Navigator.pop(context); },
+            child: Container(
+              width: 44, height: 44,
+              decoration: BoxDecoration(
+                color: c, shape: BoxShape.circle,
+                border: Border.all(color: selected ? Theme.of(context).colorScheme.onSurface : Theme.of(context).colorScheme.outlineVariant, width: selected ? 3 : 1),
+              ),
+              child: selected ? Icon(Icons.check_rounded, color: _onColor(c)) : null,
+            ),
+          );
+        }).toList()),
       ),
+      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('閉じる'))],
     ));
   }
 
   void _showSettings(bool isDark) {
-    showModalBottomSheet(context: context, builder: (context) => Container(
-      padding: const EdgeInsets.all(24),
-      child: Column(mainAxisSize: MainAxisSize.min, children: [
-        SwitchListTile(title: const Text('ダークモード'), secondary: const Icon(Icons.dark_mode), value: isDark, onChanged: (v) { MyApp.of(context)?.toggleDarkMode(v); Navigator.pop(context); }),
-        ListTile(leading: const Icon(Icons.download), title: const Text('CSVでエクスポート'), onTap: () { _exportToCSV(); Navigator.pop(context); }),
-        const Divider(),
-        const Text('テーマカラー設定 (21色)', style: TextStyle(fontWeight: FontWeight.bold)),
-        const SizedBox(height: 10),
-        SizedBox(height: 120, child: GridView.count(crossAxisCount: 7, children: themeColors.map((c) => GestureDetector(
-          onTap: () { MyApp.of(context)?.changeColor(c); Navigator.pop(context); },
-          child: Padding(padding: const EdgeInsets.all(4), child: CircleAvatar(backgroundColor: c)),
-        )).toList())),
-      ]),
-    ));
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+      builder: (context) {
+        final cs = Theme.of(context).colorScheme;
+        return SafeArea(child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            _sheetHandle(),
+            const Text('設定', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
+            const SizedBox(height: 8),
+            SwitchListTile(contentPadding: EdgeInsets.zero, title: const Text('ダークモード', style: TextStyle(fontWeight: FontWeight.w700)), secondary: const Icon(Icons.dark_mode_outlined), value: isDark, onChanged: (v) { MyApp.of(context)?.toggleDarkMode(v); Navigator.pop(context); }),
+            ListTile(contentPadding: EdgeInsets.zero, leading: const Icon(Icons.download_rounded), title: const Text('CSVでエクスポート', style: TextStyle(fontWeight: FontWeight.w700)), onTap: () { _exportToCSV(); Navigator.pop(context); }),
+            const Divider(),
+            const SizedBox(height: 8),
+            Text('テーマカラー', style: TextStyle(fontWeight: FontWeight.w800, color: cs.onSurfaceVariant)),
+            const SizedBox(height: 12),
+            Wrap(spacing: 12, runSpacing: 12, children: themeColors.map((c) => GestureDetector(
+              onTap: () { MyApp.of(context)?.changeColor(c); Navigator.pop(context); },
+              child: Container(width: 38, height: 38, decoration: BoxDecoration(color: c, shape: BoxShape.circle, border: Border.all(color: cs.outlineVariant))),
+            )).toList()),
+          ]),
+        ));
+      },
+    );
   }
 
   void _deleteSub(int i) {
@@ -604,7 +675,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _openAddScreen({int? index}) async {
-    final result = await Navigator.push(context, MaterialPageRoute(builder: (context) => AddScreen(editData: index != null ? _subs[index] : null, genres: _genres)));
+    final result = await Navigator.push(context, MaterialPageRoute(builder: (context) => AddScreen(editData: index != null ? _subs[index] : null, genres: _genres, genreColors: {for (final g in _genres) g: _getGenreColor(g)})));
     if (result != null) { setState(() { if (index != null) _subs[index] = result; else _subs.add(result); _sortList(); }); _saveAllData(); }
   }
 }
