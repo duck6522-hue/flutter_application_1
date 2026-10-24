@@ -315,10 +315,45 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  int _displayPrice(Map<String, dynamic> item) {
+    final yearly = item['isYearly'] ?? false;
+    return _isYearlyView ? (yearly ? item['price'] : item['price'] * 12) : (yearly ? (item['price'] / 12).round() : item['price']);
+  }
+
+  // 月払い/年払いの区切り見出し(件数と小計つき)
+  Widget _buildSectionHeader(bool yearly, List<Map<String, dynamic>> items) {
+    final cs = Theme.of(context).colorScheme;
+    final subtotal = items.where((i) => i['includeInMonthly'] ?? true).fold<int>(0, (sum, i) => sum + _displayPrice(i));
+    final unit = _isYearlyView ? '年' : '月';
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 4),
+      child: Row(children: [
+        Container(
+          padding: const EdgeInsets.all(6),
+          decoration: BoxDecoration(color: cs.primary.withOpacity(0.12), borderRadius: BorderRadius.circular(10)),
+          child: Icon(yearly ? Icons.event_note_rounded : Icons.calendar_month_rounded, size: 18, color: cs.primary),
+        ),
+        const SizedBox(width: 10),
+        Text(yearly ? '年払い' : '月払い', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
+        const SizedBox(width: 8),
+        Text('${items.length}件', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: cs.onSurfaceVariant)),
+        const Spacer(),
+        Text('小計 ${_formatter.format(subtotal)}円/$unit', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: cs.onSurfaceVariant)),
+      ]),
+    );
+  }
+
   Widget _buildListView(List<Map<String, dynamic>> list) {
+    // 月払い → 年払いの順に、見出しを挟んで並べる
+    final monthly = list.where((i) => !(i['isYearly'] ?? false)).toList();
+    final yearlyItems = list.where((i) => i['isYearly'] ?? false).toList();
+    final List<Object> rows = [
+      if (monthly.isNotEmpty) ...[_buildSectionHeader(false, monthly), ...monthly],
+      if (yearlyItems.isNotEmpty) ...[_buildSectionHeader(true, yearlyItems), ...yearlyItems],
+    ];
     return ListView.builder(
       padding: const EdgeInsets.only(bottom: 96), // FABと重ならない余白
-      itemCount: list.length + 1,
+      itemCount: rows.length + 1,
       itemBuilder: (context, index) {
         if (index == 0) {
           return Column(children: [
@@ -337,12 +372,14 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
           ]);
         }
-        final item = list[index - 1];
+        final row = rows[index - 1];
+        if (row is Widget) return row;
+        final item = row as Map<String, dynamic>;
         final bool include = item['includeInMonthly'] ?? true;
         final bool reviewing = item['isReviewing'] ?? false;
         final bool yearly = item['isYearly'] ?? false;
         final int diff = _calculateDaysUntil(item['month'], item['day'], yearly);
-        final int itemPrice = _isYearlyView ? (yearly ? item['price'] : item['price'] * 12) : (yearly ? (item['price'] / 12).round() : item['price']);
+        final int itemPrice = _displayPrice(item);
         final Color gc = _getGenreColor(item['genre']);
         final String dateText = yearly ? '毎年${item['month']}月${item['day']}日' : '毎月${item['day']}日';
         final String unit = _isYearlyView ? '/年' : '/月';
@@ -369,15 +406,18 @@ class _HomeScreenState extends State<HomeScreen> {
                         _buildDaysBadge(diff),
                         Text(dateText, style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant)),
                         _buildTag(item['genre'], gc),
-                        if (yearly) _buildTag('年払い', Colors.indigo),
                         if (reviewing) _buildTag('検討中', Colors.orange, icon: Icons.warning_amber_rounded),
                         if (!include) _buildTag('合計外', Colors.grey),
                       ]),
                     ])),
                     const SizedBox(width: 8),
                     Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.end, children: [
-                      Text('${_formatter.format(itemPrice)}円', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, letterSpacing: -0.5)),
-                      Text(unit, style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                      // 年払いは実際の請求額を主表示にし、月換算は補足にする
+                      Text('${_formatter.format(yearly ? item['price'] : itemPrice)}円', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, letterSpacing: -0.5)),
+                      Text(
+                        yearly ? (_isYearlyView ? '/年' : '/年・月あたり${_formatter.format(itemPrice)}円') : unit,
+                        style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                      ),
                     ]),
                   ]),
                 )),
