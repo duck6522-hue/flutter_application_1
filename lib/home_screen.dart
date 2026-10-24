@@ -4,6 +4,8 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
 import 'dart:convert';
 import 'dart:html' as html;
+import 'dart:ui' as ui;
+import 'package:flutter/rendering.dart';
 import 'add_screen.dart';
 import 'app_pill.dart';
 import 'main.dart';
@@ -23,6 +25,7 @@ class _HomeScreenState extends State<HomeScreen> {
   String _searchQuery = '';
   String _sortBy = 'date';
   String? _filterGenre; // nullなら全カテゴリ
+  final GlobalKey _captureKey = GlobalKey(); // 画面保存用
   int _touchedIndex = -1; // 分析グラフでタップ中のカテゴリ
   bool _isYearlyView = false;
   final _formatter = NumberFormat('#,###');
@@ -115,6 +118,29 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  // --- 画面を画像(PNG)で保存 ---
+  Future<void> _saveScreenshot() async {
+    try {
+      final boundary = _captureKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+      if (boundary == null) return;
+      final image = await boundary.toImage(pixelRatio: 2.5);
+      final data = await image.toByteData(format: ui.ImageByteFormat.png);
+      if (data == null) return;
+      final blob = html.Blob([data.buffer.asUint8List()], 'image/png');
+      final url = html.Url.createObjectUrlFromBlob(blob);
+      final stamp = DateFormat('yyyyMMdd_HHmm').format(DateTime.now());
+      html.AnchorElement(href: url)..setAttribute('download', 'subsc_$stamp.png')..click();
+      html.Url.revokeObjectUrl(url);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('画面を画像で保存しました'), behavior: SnackBarBehavior.floating));
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('画像の保存に失敗しました'), behavior: SnackBarBehavior.floating));
+      }
+    }
+  }
+
   // --- CSV出力 ---
   void _exportToCSV() {
     String csv = '\uFEFF名前,金額,サイクル,更新月,更新日,ジャンル,計上,検討中\n';
@@ -148,17 +174,24 @@ class _HomeScreenState extends State<HomeScreen> {
               icon: const Icon(Icons.category_rounded),
               label: const Text('カテゴリ設定', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
             ),
+            IconButton(tooltip: '画面を画像で保存', icon: const Icon(Icons.photo_camera_outlined), onPressed: _saveScreenshot),
             IconButton(icon: const Icon(Icons.tune_rounded), onPressed: () => _showSettings(isDark)),
           ],
           bottom: const TabBar(tabs: [Tab(text: '一覧'), Tab(text: '分析レポート')]),
         ),
-        body: TabBarView(
-          children: [
-            Column(children: [
-              Expanded(child: _buildListView(filteredSubs)),
-            ]),
-            _buildAnalysisTab(),
-          ],
+        body: RepaintBoundary(
+          key: _captureKey,
+          child: ColoredBox(
+            color: Theme.of(context).scaffoldBackgroundColor,
+            child: TabBarView(
+              children: [
+                Column(children: [
+                  Expanded(child: _buildListView(filteredSubs)),
+                ]),
+                _buildAnalysisTab(),
+              ],
+            ),
+          ),
         ),
         floatingActionButton: FloatingActionButton.extended(
           onPressed: () => _openAddScreen(),
@@ -175,11 +208,34 @@ class _HomeScreenState extends State<HomeScreen> {
     return hsl.withHue((hsl.hue + 35) % 360).withSaturation((hsl.saturation + 0.1).clamp(0.0, 1.0)).toColor();
   }
 
+  Widget _headerTile({required String label, required int value, required String unit, required IconData icon, required Color on, String? sub}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(color: on.withOpacity(0.16), borderRadius: BorderRadius.circular(14)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Icon(icon, size: 15, color: on.withOpacity(0.85)),
+          const SizedBox(width: 5),
+          Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: on.withOpacity(0.85))),
+        ]),
+        const SizedBox(height: 4),
+        FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: Text.rich(TextSpan(children: [
+          TextSpan(text: _formatter.format(value), style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: on)),
+          TextSpan(text: ' 円/$unit', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: on.withOpacity(0.85))),
+        ]))),
+        if (sub != null) Text(sub, style: TextStyle(fontSize: 11, color: on.withOpacity(0.8))),
+      ]),
+    );
+  }
+
   Widget _buildSummaryHeader() {
     final cs = Theme.of(context).colorScheme;
     final on = cs.onPrimary;
     int displayPrice = _isYearlyView ? _totalMonthlyPrice * 12 : _totalMonthlyPrice;
     int displayReviewPrice = _isYearlyView ? _reviewTotalPrice * 12 : _reviewTotalPrice;
+    final counted = _subs.where((i) => i['includeInMonthly'] ?? true);
+    final int monthlyBilled = counted.where((i) => !(i['isYearly'] ?? false)).fold(0, (sum, i) => sum + (i['price'] as int));
+    final int yearlyBilled = counted.where((i) => i['isYearly'] ?? false).fold(0, (sum, i) => sum + (i['price'] as int));
     return Container(
       padding: const EdgeInsets.all(22), margin: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -199,6 +255,12 @@ class _HomeScreenState extends State<HomeScreen> {
           ])),
           Icon(Icons.auto_graph_rounded, color: on.withOpacity(0.35), size: 48),
         ]),
+        const SizedBox(height: 14),
+        IntrinsicHeight(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Expanded(child: _headerTile(label: '月払い', value: monthlyBilled * (_isYearlyView ? 12 : 1), unit: _isYearlyView ? '年' : '月', icon: Icons.calendar_month_rounded, on: on)),
+          const SizedBox(width: 10),
+          Expanded(child: _headerTile(label: '年払い', value: yearlyBilled, unit: '年', icon: Icons.event_note_rounded, on: on, sub: _isYearlyView || yearlyBilled == 0 ? null : '月あたり ${_formatter.format((yearlyBilled / 12).round())}円')),
+        ])),
         if (displayReviewPrice > 0) ...[
           const SizedBox(height: 14),
           Container(
