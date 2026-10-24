@@ -63,6 +63,16 @@ flutter:
 # ★ここから下を追加（スペースの数に注意！）
   assets:
     - assets/icon/
+
+  fonts:
+    - family: NotoSansJP
+      fonts:
+        - asset: fonts/NotoSansJP-400Regular.ttf
+          weight: 400
+        - asset: fonts/NotoSansJP-700Bold.ttf
+          weight: 700
+        - asset: fonts/NotoSansJP-900Black.ttf
+          weight: 900
   # To add assets to your application, add an assets section, like this:
   # assets:
   #   - images/a_dot_burr.jpeg

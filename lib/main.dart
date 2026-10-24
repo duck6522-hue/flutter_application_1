@@ -44,7 +44,7 @@ class _MyAppState extends State<MyApp> {
     return ThemeData(
       useMaterial3: true,
       colorScheme: cs,
-      fontFamily: 'sans-serif',
+      fontFamily: 'NotoSansJP',
       scaffoldBackgroundColor: bg,
       appBarTheme: AppBarTheme(
         backgroundColor: bg,

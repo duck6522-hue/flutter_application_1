@@ -23,6 +23,7 @@ class _HomeScreenState extends State<HomeScreen> {
   String _searchQuery = '';
   String _sortBy = 'date';
   String? _filterGenre; // nullなら全カテゴリ
+  int _touchedIndex = -1; // 分析グラフでタップ中のカテゴリ
   bool _isYearlyView = false;
   final _formatter = NumberFormat('#,###');
 
@@ -388,111 +389,281 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildAnalysisTab() {
-    Map<String, int> totals = {};
-    for (var item in _subs) {
-      if (!(item['includeInMonthly'] ?? true)) continue;
-      int p = (item['isYearly'] ?? false) ? (item['price'] / 12).round() : item['price'] as int;
-      totals[item['genre']] = (totals[item['genre']] ?? 0) + (_isYearlyView ? p * 12 : p);
-    }
-    if (totals.isEmpty) return const Center(child: Text('分析データがありません'));
+  Widget _analysisCard({required String title, required Widget child}) {
+    final cs = Theme.of(context).colorScheme;
+    return Card(
+      margin: const EdgeInsets.fromLTRB(16, 6, 16, 10),
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(title, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: cs.onSurfaceVariant)),
+          const SizedBox(height: 14),
+          child,
+        ]),
+      ),
+    );
+  }
 
-    return SingleChildScrollView(
-      child: Column(children: [
-        const SizedBox(height: 30),
-        SizedBox(height: 280, child: PieChart(PieChartData(
-          startDegreeOffset: 270, sectionsSpace: 4, centerSpaceRadius: 60,
-          sections: totals.entries.map((e) => PieChartSectionData(
-            color: _getGenreColor(e.key), value: e.value.toDouble(), radius: 70,
-            title: '${(e.value / (_isYearlyView ? _totalMonthlyPrice * 12 : _totalMonthlyPrice) * 100).toStringAsFixed(1)}%',
-            titleStyle: TextStyle(color: _onColor(_getGenreColor(e.key)), fontWeight: FontWeight.bold, fontSize: 12),
-          )).toList(),
-        ))),
-        Padding(
-          padding: const EdgeInsets.all(24),
-          child: Wrap(spacing: 12, runSpacing: 12, children: totals.keys.map((g) => Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            decoration: BoxDecoration(color: _getGenreColor(g).withOpacity(0.15), borderRadius: BorderRadius.circular(20), border: Border.all(color: _getGenreColor(g).withOpacity(0.6))),
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              CircleAvatar(radius: 5, backgroundColor: _getGenreColor(g)),
-              const SizedBox(width: 8),
-              Text('$g: ${_formatter.format(totals[g])}円', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-            ]),
-          )).toList()),
+  // 横棒1本分: 色マーク + 名前 + 棒 + 金額/割合
+  Widget _barRow({required String label, required Color color, required double ratio, required String amount, String? sub, bool active = true}) {
+    final cs = Theme.of(context).colorScheme;
+    return Opacity(
+      opacity: active ? 1 : 0.4,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 7),
+        child: Column(children: [
+          Row(children: [
+            Container(width: 10, height: 10, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+            const SizedBox(width: 8),
+            Expanded(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w700))),
+            Text(amount, style: const TextStyle(fontWeight: FontWeight.w900)),
+            if (sub != null) SizedBox(width: 52, child: Text(sub, textAlign: TextAlign.right, style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant, fontWeight: FontWeight.bold))),
+          ]),
+          const SizedBox(height: 6),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: LinearProgressIndicator(value: ratio.clamp(0.0, 1.0), minHeight: 8, color: color, backgroundColor: cs.onSurface.withOpacity(0.08)),
+          ),
+        ]),
+      ),
+    );
+  }
+
+  Widget _buildAnalysisTab() {
+    final cs = Theme.of(context).colorScheme;
+    final mul = _isYearlyView ? 12 : 1;
+    int monthlyOf(Map<String, dynamic> item) => (item['isYearly'] ?? false) ? (item['price'] / 12).round() : item['price'] as int;
+
+    final counted = _subs.where((i) => i['includeInMonthly'] ?? true).toList();
+    final Map<String, int> totals = {};
+    for (var item in counted) {
+      totals[item['genre']] = (totals[item['genre']] ?? 0) + monthlyOf(item) * mul;
+    }
+    if (totals.isEmpty) {
+      return Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Icon(Icons.donut_large_rounded, size: 56, color: cs.onSurfaceVariant),
+        const SizedBox(height: 8),
+        Text('分析データがありません', style: TextStyle(color: cs.onSurfaceVariant, fontWeight: FontWeight.bold)),
+      ]));
+    }
+    final entries = totals.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+    final total = entries.fold<int>(0, (sum, e) => sum + e.value);
+    final top = counted.toList()..sort((a, b) => monthlyOf(b).compareTo(monthlyOf(a)));
+    final topItems = top.take(5).toList();
+    final touched = (_touchedIndex >= 0 && _touchedIndex < entries.length) ? entries[_touchedIndex] : null;
+    final unitLabel = _isYearlyView ? '年間合計' : '月間合計';
+
+    return ListView(
+      padding: const EdgeInsets.only(top: 10, bottom: 96),
+      children: [
+        _analysisCard(
+          title: 'カテゴリ別の割合',
+          child: Column(children: [
+            SizedBox(
+              height: 240,
+              child: Stack(alignment: Alignment.center, children: [
+                PieChart(PieChartData(
+                  startDegreeOffset: 270, sectionsSpace: 3, centerSpaceRadius: 82,
+                  borderData: FlBorderData(show: false),
+                  pieTouchData: PieTouchData(touchCallback: (event, resp) {
+                    final i = resp?.touchedSection?.touchedSectionIndex ?? -1;
+                    if (!event.isInterestedForInteractions || i < 0) {
+                      if (_touchedIndex != -1) setState(() => _touchedIndex = -1);
+                    } else if (i != _touchedIndex) {
+                      setState(() => _touchedIndex = i);
+                    }
+                  }),
+                  sections: List.generate(entries.length, (i) => PieChartSectionData(
+                    color: _getGenreColor(entries[i].key),
+                    value: entries[i].value.toDouble(),
+                    radius: _touchedIndex == i ? 36 : 28,
+                    showTitle: false,
+                  )),
+                )),
+                // 中心: 合計 or タップ中カテゴリの詳細
+                Column(mainAxisSize: MainAxisSize.min, children: [
+                  Text(touched?.key ?? unitLabel, style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: cs.onSurfaceVariant)),
+                  const SizedBox(height: 2),
+                  Text('${_formatter.format(touched?.value ?? total)}円', style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w900, letterSpacing: -0.5)),
+                  if (touched != null)
+                    Text('${(touched.value / total * 100).toStringAsFixed(1)}%', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: _getGenreColor(touched.key))),
+                ]),
+              ]),
+            ),
+            Text('リングをタップすると詳細が見られます', style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant)),
+          ]),
         ),
-      ]),
+        _analysisCard(
+          title: 'カテゴリ別ランキング',
+          child: Column(children: List.generate(entries.length, (i) {
+            final e = entries[i];
+            return GestureDetector(
+              onTap: () => setState(() => _touchedIndex = _touchedIndex == i ? -1 : i),
+              behavior: HitTestBehavior.opaque,
+              child: _barRow(
+                label: e.key, color: _getGenreColor(e.key), ratio: e.value / entries.first.value,
+                amount: '${_formatter.format(e.value)}円', sub: '${(e.value / total * 100).toStringAsFixed(0)}%',
+                active: _touchedIndex == -1 || _touchedIndex == i,
+              ),
+            );
+          })),
+        ),
+        _analysisCard(
+          title: '高いサブスク TOP${topItems.length}',
+          child: Column(children: [
+            for (final item in topItems)
+              _barRow(
+                label: item['name'], color: _getGenreColor(item['genre']),
+                ratio: monthlyOf(item) / monthlyOf(topItems.first),
+                amount: '${_formatter.format(monthlyOf(item) * mul)}円',
+                sub: '${(monthlyOf(item) * mul / total * 100).toStringAsFixed(0)}%',
+              ),
+          ]),
+        ),
+      ],
     );
   }
 
   // --- カテゴリ管理・色選択 ---
+  Widget _sheetHandle() => Center(
+    child: Container(
+      width: 40, height: 4, margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(color: Theme.of(context).colorScheme.outlineVariant, borderRadius: BorderRadius.circular(2)),
+    ),
+  );
+
   void _showGenreManagement() {
+    final addController = TextEditingController();
     showModalBottomSheet(
-      context: context, isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (context) => StatefulBuilder(builder: (context, setModalState) => Container(
-        padding: const EdgeInsets.all(24), height: 600,
-        child: Column(children: [
-          const Text('カテゴリ管理・追加', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
-          const Text('好きなカテゴリを自由に追加したり、色を塗れます', style: TextStyle(color: Colors.grey, fontSize: 12)),
-          const SizedBox(height: 24),
-          Expanded(child: ListView.builder(
-            itemCount: _genres.length,
-            itemBuilder: (context, i) => ListTile(
-              leading: GestureDetector(
-                onTap: () => _pickGenreColor(_genres[i], setModalState),
-                child: CircleAvatar(backgroundColor: _getGenreColor(_genres[i]), child: Icon(Icons.palette, size: 14, color: _onColor(_getGenreColor(_genres[i])))),
-              ),
-              title: Text(_genres[i], style: const TextStyle(fontWeight: FontWeight.bold)),
-              trailing: IconButton(icon: const Icon(Icons.remove_circle_outline, color: Colors.red), onPressed: () {
-                setState(() { setModalState(() => _genres.removeAt(i)); _saveAllData(); });
-              }),
-            ),
-          )),
-          const Divider(),
-          Padding(
-            padding: const EdgeInsets.only(bottom: 20),
-            child: TextField(
+      context: context, isScrollControlled: true, useSafeArea: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+      builder: (sheetContext) => StatefulBuilder(builder: (context, setModalState) {
+        final cs = Theme.of(context).colorScheme;
+        void addGenre() {
+          final name = addController.text.trim();
+          if (name.isEmpty) return;
+          if (_genres.contains(name)) {
+            ScaffoldMessenger.of(this.context).showSnackBar(const SnackBar(content: Text('同じ名前のカテゴリがあります'), behavior: SnackBarBehavior.floating));
+            return;
+          }
+          setState(() { setModalState(() => _genres.add(name)); _saveAllData(); });
+          addController.clear();
+        }
+        return Padding(
+          padding: EdgeInsets.fromLTRB(20, 12, 20, 16 + MediaQuery.of(context).viewInsets.bottom),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            _sheetHandle(),
+            const Text('カテゴリ設定', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
+            const SizedBox(height: 4),
+            Text('左の色の丸をタップすると色を変えられます', style: TextStyle(color: cs.onSurfaceVariant, fontSize: 12)),
+            const SizedBox(height: 16),
+            Flexible(child: ListView.separated(
+              shrinkWrap: true,
+              itemCount: _genres.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 8),
+              itemBuilder: (context, i) {
+                final g = _genres[i];
+                final used = _subs.where((e) => e['genre'] == g).length;
+                final c = _getGenreColor(g);
+                return Material(
+                  color: cs.brightness == Brightness.dark ? cs.surfaceContainerHigh : cs.surfaceContainerLow,
+                  borderRadius: BorderRadius.circular(16),
+                  child: ListTile(
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    leading: GestureDetector(
+                      onTap: () => _pickGenreColor(g, setModalState),
+                      child: Container(
+                        width: 40, height: 40,
+                        decoration: BoxDecoration(color: c, shape: BoxShape.circle),
+                        child: Icon(Icons.palette_outlined, size: 18, color: _onColor(c)),
+                      ),
+                    ),
+                    title: Text(g, style: const TextStyle(fontWeight: FontWeight.w800)),
+                    subtitle: Text(used == 0 ? '未使用' : '$used件で使用中', style: const TextStyle(fontSize: 12)),
+                    trailing: IconButton(
+                      icon: Icon(Icons.delete_outline_rounded, color: used == 0 ? cs.error : cs.outline),
+                      onPressed: () {
+                        if (used > 0) {
+                          ScaffoldMessenger.of(this.context).showSnackBar(SnackBar(content: Text('「$g」は$used件のサブスクで使用中のため削除できません'), behavior: SnackBarBehavior.floating));
+                          return;
+                        }
+                        setState(() { setModalState(() => _genres.removeAt(i)); _saveAllData(); });
+                      },
+                    ),
+                  ),
+                );
+              },
+            )),
+            const SizedBox(height: 16),
+            TextField(
+              controller: addController,
+              textInputAction: TextInputAction.done,
               decoration: InputDecoration(
-                hintText: '新しいカテゴリ名を入力...', 
-                prefixIcon: const Icon(Icons.add_box_rounded),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                hintText: '新しいカテゴリ名',
+                prefixIcon: const Icon(Icons.add_rounded),
+                suffixIcon: IconButton(icon: const Icon(Icons.check_circle_rounded), color: cs.primary, onPressed: addGenre),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
               ),
-              onSubmitted: (val) { if (val.isNotEmpty) setState(() { setModalState(() => _genres.add(val)); _saveAllData(); }); },
+              onSubmitted: (_) => addGenre(),
             ),
-          ),
-        ]),
-      )),
+          ]),
+        );
+      }),
     );
   }
 
   void _pickGenreColor(String genre, StateSetter setModalState) {
+    final current = _genreColors[genre];
     showDialog(context: context, builder: (context) => AlertDialog(
-      title: Text('$genre の色を選択'),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      title: Text('「$genre」の色', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18)),
       content: SizedBox(
-        width: 300,
-        child: Wrap(spacing: 10, runSpacing: 10, children: themeColors.map((c) => GestureDetector(
-          onTap: () { setState(() { setModalState(() => _genreColors[genre] = c.value); _saveAllData(); }); Navigator.pop(context); },
-          child: CircleAvatar(backgroundColor: c, radius: 22),
-        )).toList()),
+        width: 320,
+        child: Wrap(spacing: 12, runSpacing: 12, children: themeColors.map((c) {
+          final selected = current == c.value;
+          return GestureDetector(
+            onTap: () { setState(() { setModalState(() => _genreColors[genre] = c.value); _saveAllData(); }); Navigator.pop(context); },
+            child: Container(
+              width: 44, height: 44,
+              decoration: BoxDecoration(
+                color: c, shape: BoxShape.circle,
+                border: Border.all(color: selected ? Theme.of(context).colorScheme.onSurface : Theme.of(context).colorScheme.outlineVariant, width: selected ? 3 : 1),
+              ),
+              child: selected ? Icon(Icons.check_rounded, color: _onColor(c)) : null,
+            ),
+          );
+        }).toList()),
       ),
+      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('閉じる'))],
     ));
   }
 
   void _showSettings(bool isDark) {
-    showModalBottomSheet(context: context, builder: (context) => Container(
-      padding: const EdgeInsets.all(24),
-      child: Column(mainAxisSize: MainAxisSize.min, children: [
-        SwitchListTile(title: const Text('ダークモード'), secondary: const Icon(Icons.dark_mode), value: isDark, onChanged: (v) { MyApp.of(context)?.toggleDarkMode(v); Navigator.pop(context); }),
-        ListTile(leading: const Icon(Icons.download), title: const Text('CSVでエクスポート'), onTap: () { _exportToCSV(); Navigator.pop(context); }),
-        const Divider(),
-        const Text('テーマカラー設定 (21色)', style: TextStyle(fontWeight: FontWeight.bold)),
-        const SizedBox(height: 10),
-        SizedBox(height: 120, child: GridView.count(crossAxisCount: 7, children: themeColors.map((c) => GestureDetector(
-          onTap: () { MyApp.of(context)?.changeColor(c); Navigator.pop(context); },
-          child: Padding(padding: const EdgeInsets.all(4), child: CircleAvatar(backgroundColor: c)),
-        )).toList())),
-      ]),
-    ));
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+      builder: (context) {
+        final cs = Theme.of(context).colorScheme;
+        return SafeArea(child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            _sheetHandle(),
+            const Text('設定', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
+            const SizedBox(height: 8),
+            SwitchListTile(contentPadding: EdgeInsets.zero, title: const Text('ダークモード', style: TextStyle(fontWeight: FontWeight.w700)), secondary: const Icon(Icons.dark_mode_outlined), value: isDark, onChanged: (v) { MyApp.of(context)?.toggleDarkMode(v); Navigator.pop(context); }),
+            ListTile(contentPadding: EdgeInsets.zero, leading: const Icon(Icons.download_rounded), title: const Text('CSVでエクスポート', style: TextStyle(fontWeight: FontWeight.w700)), onTap: () { _exportToCSV(); Navigator.pop(context); }),
+            const Divider(),
+            const SizedBox(height: 8),
+            Text('テーマカラー', style: TextStyle(fontWeight: FontWeight.w800, color: cs.onSurfaceVariant)),
+            const SizedBox(height: 12),
+            Wrap(spacing: 12, runSpacing: 12, children: themeColors.map((c) => GestureDetector(
+              onTap: () { MyApp.of(context)?.changeColor(c); Navigator.pop(context); },
+              child: Container(width: 38, height: 38, decoration: BoxDecoration(color: c, shape: BoxShape.circle, border: Border.all(color: cs.outlineVariant))),
+            )).toList()),
+          ]),
+        ));
+      },
+    );
   }
 
   void _deleteSub(int i) {
@@ -504,7 +675,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _openAddScreen({int? index}) async {
-    final result = await Navigator.push(context, MaterialPageRoute(builder: (context) => AddScreen(editData: index != null ? _subs[index] : null, genres: _genres)));
+    final result = await Navigator.push(context, MaterialPageRoute(builder: (context) => AddScreen(editData: index != null ? _subs[index] : null, genres: _genres, genreColors: {for (final g in _genres) g: _getGenreColor(g)})));
     if (result != null) { setState(() { if (index != null) _subs[index] = result; else _subs.add(result); _sortList(); }); _saveAllData(); }
   }
 }
