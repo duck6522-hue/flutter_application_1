@@ -4,6 +4,8 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
 import 'dart:convert';
 import 'dart:html' as html;
+import 'dart:ui' as ui;
+import 'package:flutter/rendering.dart';
 import 'add_screen.dart';
 import 'app_pill.dart';
 import 'main.dart';
@@ -23,6 +25,7 @@ class _HomeScreenState extends State<HomeScreen> {
   String _searchQuery = '';
   String _sortBy = 'date';
   String? _filterGenre; // nullなら全カテゴリ
+  final GlobalKey _captureKey = GlobalKey(); // 画面保存用
   int _touchedIndex = -1; // 分析グラフでタップ中のカテゴリ
   bool _isYearlyView = false;
   final _formatter = NumberFormat('#,###');
@@ -88,21 +91,19 @@ class _HomeScreenState extends State<HomeScreen> {
     return nextDate.difference(today).inDays;
   }
 
-  int get _totalMonthlyPrice {
-    return _subs.fold(0, (sum, item) {
-      if (!(item['includeInMonthly'] ?? true)) return sum;
-      int p = item['price'] as int;
-      return sum + ((item['isYearly'] ?? false) ? (p / 12).round() : p);
-    });
+  // 年払いは「月額にも含める」をオンにしたものだけ月額表示に入る(年額表示では全部入る)
+  bool _inView(Map<String, dynamic> item) {
+    final yearly = item['isYearly'] ?? false;
+    return !yearly || _isYearlyView || (item['showInMonthly'] ?? false);
   }
 
-  int get _reviewTotalPrice {
-    return _subs.fold(0, (sum, item) {
-      if (!(item['isReviewing'] ?? false)) return sum;
-      int p = item['price'] as int;
-      return sum + ((item['isYearly'] ?? false) ? (p / 12).round() : p);
-    });
-  }
+  int get _totalPrice => _subs
+      .where((i) => (i['includeInMonthly'] ?? true) && _inView(i))
+      .fold(0, (sum, i) => sum + _displayPrice(i));
+
+  int get _reviewPrice => _subs
+      .where((i) => (i['isReviewing'] ?? false) && _inView(i))
+      .fold(0, (sum, i) => sum + _displayPrice(i));
 
   void _sortList() {
     setState(() {
@@ -113,6 +114,29 @@ class _HomeScreenState extends State<HomeScreen> {
         _subs.sort((a, b) => (b['price'] as int).compareTo(a['price'] as int));
       }
     });
+  }
+
+  // --- 画面を画像(PNG)で保存 ---
+  Future<void> _saveScreenshot() async {
+    try {
+      final boundary = _captureKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+      if (boundary == null) return;
+      final image = await boundary.toImage(pixelRatio: 2.5);
+      final data = await image.toByteData(format: ui.ImageByteFormat.png);
+      if (data == null) return;
+      final blob = html.Blob([data.buffer.asUint8List()], 'image/png');
+      final url = html.Url.createObjectUrlFromBlob(blob);
+      final stamp = DateFormat('yyyyMMdd_HHmm').format(DateTime.now());
+      html.AnchorElement(href: url)..setAttribute('download', 'subsc_$stamp.png')..click();
+      html.Url.revokeObjectUrl(url);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('画面を画像で保存しました'), behavior: SnackBarBehavior.floating));
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('画像の保存に失敗しました'), behavior: SnackBarBehavior.floating));
+      }
+    }
   }
 
   // --- CSV出力 ---
@@ -148,17 +172,24 @@ class _HomeScreenState extends State<HomeScreen> {
               icon: const Icon(Icons.category_rounded),
               label: const Text('カテゴリ設定', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
             ),
+            IconButton(tooltip: '画面を画像で保存', icon: const Icon(Icons.photo_camera_outlined), onPressed: _saveScreenshot),
             IconButton(icon: const Icon(Icons.tune_rounded), onPressed: () => _showSettings(isDark)),
           ],
           bottom: const TabBar(tabs: [Tab(text: '一覧'), Tab(text: '分析レポート')]),
         ),
-        body: TabBarView(
-          children: [
-            Column(children: [
-              Expanded(child: _buildListView(filteredSubs)),
-            ]),
-            _buildAnalysisTab(),
-          ],
+        body: RepaintBoundary(
+          key: _captureKey,
+          child: ColoredBox(
+            color: Theme.of(context).scaffoldBackgroundColor,
+            child: TabBarView(
+              children: [
+                Column(children: [
+                  Expanded(child: _buildListView(filteredSubs)),
+                ]),
+                _buildAnalysisTab(),
+              ],
+            ),
+          ),
         ),
         floatingActionButton: FloatingActionButton.extended(
           onPressed: () => _openAddScreen(),
@@ -175,11 +206,35 @@ class _HomeScreenState extends State<HomeScreen> {
     return hsl.withHue((hsl.hue + 35) % 360).withSaturation((hsl.saturation + 0.1).clamp(0.0, 1.0)).toColor();
   }
 
+  Widget _headerTile({required String label, required int value, required String unit, required IconData icon, required Color on, String? sub}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(color: on.withOpacity(0.16), borderRadius: BorderRadius.circular(14)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Icon(icon, size: 15, color: on.withOpacity(0.85)),
+          const SizedBox(width: 5),
+          Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: on.withOpacity(0.85))),
+        ]),
+        const SizedBox(height: 4),
+        FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: Text.rich(TextSpan(children: [
+          TextSpan(text: _formatter.format(value), style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: on)),
+          TextSpan(text: ' 円/$unit', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: on.withOpacity(0.85))),
+        ]))),
+        if (sub != null) Text(sub, style: TextStyle(fontSize: 11, color: on.withOpacity(0.8))),
+      ]),
+    );
+  }
+
   Widget _buildSummaryHeader() {
     final cs = Theme.of(context).colorScheme;
     final on = cs.onPrimary;
-    int displayPrice = _isYearlyView ? _totalMonthlyPrice * 12 : _totalMonthlyPrice;
-    int displayReviewPrice = _isYearlyView ? _reviewTotalPrice * 12 : _reviewTotalPrice;
+    final int displayPrice = _totalPrice;
+    final int displayReviewPrice = _reviewPrice;
+    final int excludedYearly = _isYearlyView ? 0 : _subs.where((i) => (i['isYearly'] ?? false) && (i['includeInMonthly'] ?? true) && !_inView(i)).length;
+    final counted = _subs.where((i) => i['includeInMonthly'] ?? true);
+    final int monthlyBilled = counted.where((i) => !(i['isYearly'] ?? false)).fold(0, (sum, i) => sum + (i['price'] as int));
+    final int yearlyBilled = counted.where((i) => i['isYearly'] ?? false).fold(0, (sum, i) => sum + (i['price'] as int));
     return Container(
       padding: const EdgeInsets.all(22), margin: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -196,9 +251,16 @@ class _HomeScreenState extends State<HomeScreen> {
             Text(_isYearlyView ? '年間合計' : '月間合計', style: TextStyle(color: on.withOpacity(0.8), fontWeight: FontWeight.bold)),
             const SizedBox(height: 2),
             FittedBox(fit: BoxFit.scaleDown, child: Text('${_formatter.format(displayPrice)} 円', style: TextStyle(fontSize: 38, color: on, fontWeight: FontWeight.w900, letterSpacing: -1))),
+            if (excludedYearly > 0) Text('年払い$excludedYearly件は含まず', style: TextStyle(fontSize: 12, color: on.withOpacity(0.8))),
           ])),
           Icon(Icons.auto_graph_rounded, color: on.withOpacity(0.35), size: 48),
         ]),
+        const SizedBox(height: 14),
+        IntrinsicHeight(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Expanded(child: _headerTile(label: '月払い', value: monthlyBilled * (_isYearlyView ? 12 : 1), unit: _isYearlyView ? '年' : '月', icon: Icons.calendar_month_rounded, on: on)),
+          const SizedBox(width: 10),
+          Expanded(child: _headerTile(label: '年払い', value: yearlyBilled, unit: '年', icon: Icons.event_note_rounded, on: on, sub: _isYearlyView || yearlyBilled == 0 ? null : '月あたり ${_formatter.format((yearlyBilled / 12).round())}円')),
+        ])),
         if (displayReviewPrice > 0) ...[
           const SizedBox(height: 14),
           Container(
@@ -315,10 +377,47 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  int _displayPrice(Map<String, dynamic> item) {
+    final yearly = item['isYearly'] ?? false;
+    return _isYearlyView ? (yearly ? item['price'] : item['price'] * 12) : (yearly ? (item['price'] / 12).round() : item['price']);
+  }
+
+  // 月払い/年払いの区切り見出し(件数と小計つき)
+  Widget _buildSectionHeader(bool yearly, List<Map<String, dynamic>> items) {
+    final cs = Theme.of(context).colorScheme;
+    final counted = items.where((i) => i['includeInMonthly'] ?? true);
+    // 年払いセクションは実際の請求額(年額)、月払いは表示中の単位で小計
+    final subtotal = counted.fold<int>(0, (sum, i) => sum + (yearly ? i['price'] as int : _displayPrice(i)));
+    final unit = yearly ? '年' : (_isYearlyView ? '年' : '月');
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 4),
+      child: Row(children: [
+        Container(
+          padding: const EdgeInsets.all(6),
+          decoration: BoxDecoration(color: cs.primary.withOpacity(0.12), borderRadius: BorderRadius.circular(10)),
+          child: Icon(yearly ? Icons.event_note_rounded : Icons.calendar_month_rounded, size: 18, color: cs.primary),
+        ),
+        const SizedBox(width: 10),
+        Text(yearly ? '年払い' : '月払い', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
+        const SizedBox(width: 8),
+        Text('${items.length}件', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: cs.onSurfaceVariant)),
+        const Spacer(),
+        Text('小計 ${_formatter.format(subtotal)}円/$unit', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: cs.onSurfaceVariant)),
+      ]),
+    );
+  }
+
   Widget _buildListView(List<Map<String, dynamic>> list) {
+    // 月払い → 年払いの順に、見出しを挟んで並べる
+    final monthly = list.where((i) => !(i['isYearly'] ?? false)).toList();
+    final yearlyItems = list.where((i) => i['isYearly'] ?? false).toList();
+    final List<Object> rows = [
+      if (monthly.isNotEmpty) ...[_buildSectionHeader(false, monthly), ...monthly],
+      if (yearlyItems.isNotEmpty) ...[_buildSectionHeader(true, yearlyItems), ...yearlyItems],
+    ];
     return ListView.builder(
       padding: const EdgeInsets.only(bottom: 96), // FABと重ならない余白
-      itemCount: list.length + 1,
+      itemCount: rows.length + 1,
       itemBuilder: (context, index) {
         if (index == 0) {
           return Column(children: [
@@ -337,12 +436,14 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
           ]);
         }
-        final item = list[index - 1];
+        final row = rows[index - 1];
+        if (row is Widget) return row;
+        final item = row as Map<String, dynamic>;
         final bool include = item['includeInMonthly'] ?? true;
         final bool reviewing = item['isReviewing'] ?? false;
         final bool yearly = item['isYearly'] ?? false;
         final int diff = _calculateDaysUntil(item['month'], item['day'], yearly);
-        final int itemPrice = _isYearlyView ? (yearly ? item['price'] : item['price'] * 12) : (yearly ? (item['price'] / 12).round() : item['price']);
+        final int itemPrice = _displayPrice(item);
         final Color gc = _getGenreColor(item['genre']);
         final String dateText = yearly ? '毎年${item['month']}月${item['day']}日' : '毎月${item['day']}日';
         final String unit = _isYearlyView ? '/年' : '/月';
@@ -369,15 +470,19 @@ class _HomeScreenState extends State<HomeScreen> {
                         _buildDaysBadge(diff),
                         Text(dateText, style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant)),
                         _buildTag(item['genre'], gc),
-                        if (yearly) _buildTag('年払い', Colors.indigo),
+                        if (yearly && (item['showInMonthly'] ?? false)) _buildTag('月額にも含む', Colors.indigo),
                         if (reviewing) _buildTag('検討中', Colors.orange, icon: Icons.warning_amber_rounded),
                         if (!include) _buildTag('合計外', Colors.grey),
                       ]),
                     ])),
                     const SizedBox(width: 8),
                     Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.end, children: [
-                      Text('${_formatter.format(itemPrice)}円', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, letterSpacing: -0.5)),
-                      Text(unit, style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                      // 年払いは実際の請求額を主表示にし、月換算は補足にする
+                      Text('${_formatter.format(yearly ? item['price'] : itemPrice)}円', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, letterSpacing: -0.5)),
+                      Text(
+                        yearly ? (_isYearlyView ? '/年' : '/年・月あたり${_formatter.format(itemPrice)}円') : unit,
+                        style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                      ),
                     ]),
                   ]),
                 )),
@@ -431,13 +536,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildAnalysisTab() {
     final cs = Theme.of(context).colorScheme;
-    final mul = _isYearlyView ? 12 : 1;
-    int monthlyOf(Map<String, dynamic> item) => (item['isYearly'] ?? false) ? (item['price'] / 12).round() : item['price'] as int;
-
-    final counted = _subs.where((i) => i['includeInMonthly'] ?? true).toList();
+    final counted = _subs.where((i) => (i['includeInMonthly'] ?? true) && _inView(i)).toList();
     final Map<String, int> totals = {};
     for (var item in counted) {
-      totals[item['genre']] = (totals[item['genre']] ?? 0) + monthlyOf(item) * mul;
+      totals[item['genre']] = (totals[item['genre']] ?? 0) + _displayPrice(item);
     }
     if (totals.isEmpty) {
       return Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -448,7 +550,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     final entries = totals.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
     final total = entries.fold<int>(0, (sum, e) => sum + e.value);
-    final top = counted.toList()..sort((a, b) => monthlyOf(b).compareTo(monthlyOf(a)));
+    final top = counted.toList()..sort((a, b) => _displayPrice(b).compareTo(_displayPrice(a)));
     final topItems = top.take(5).toList();
     final touched = (_touchedIndex >= 0 && _touchedIndex < entries.length) ? entries[_touchedIndex] : null;
     final unitLabel = _isYearlyView ? '年間合計' : '月間合計';
@@ -514,9 +616,9 @@ class _HomeScreenState extends State<HomeScreen> {
             for (final item in topItems)
               _barRow(
                 label: item['name'], color: _getGenreColor(item['genre']),
-                ratio: monthlyOf(item) / monthlyOf(topItems.first),
-                amount: '${_formatter.format(monthlyOf(item) * mul)}円',
-                sub: '${(monthlyOf(item) * mul / total * 100).toStringAsFixed(0)}%',
+                ratio: _displayPrice(item) / _displayPrice(topItems.first),
+                amount: '${_formatter.format(_displayPrice(item))}円',
+                sub: '${(_displayPrice(item) / total * 100).toStringAsFixed(0)}%',
               ),
           ]),
         ),

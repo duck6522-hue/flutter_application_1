@@ -22,6 +22,7 @@ class _AddScreenState extends State<AddScreen> {
   bool _isYearly = false;
   bool _includeInMonthly = true;
   bool _isReviewing = false;
+  bool _showInMonthly = false; // 年払いを月額表示にも含めるか(デフォルトは含めない)
 
   @override
   void initState() {
@@ -36,6 +37,7 @@ class _AddScreenState extends State<AddScreen> {
       _isYearly = widget.editData!['isYearly'] ?? false;
       _includeInMonthly = widget.editData!['includeInMonthly'] ?? true;
       _isReviewing = widget.editData!['isReviewing'] ?? false;
+      _showInMonthly = widget.editData!['showInMonthly'] ?? false;
     }
   }
 
@@ -61,7 +63,7 @@ class _AddScreenState extends State<AddScreen> {
     Navigator.pop(context, {
       'name': name, 'price': price,
       'month': _selectedMonth, 'day': _selectedDay, 'genre': _selectedGenre,
-      'isYearly': _isYearly, 'includeInMonthly': _includeInMonthly, 'isReviewing': _isReviewing,
+      'isYearly': _isYearly, 'includeInMonthly': _includeInMonthly, 'isReviewing': _isReviewing, 'showInMonthly': _showInMonthly,
     });
   }
 
@@ -121,6 +123,14 @@ class _AddScreenState extends State<AddScreen> {
           subtitle: const Text('オフにすると合計・グラフから除外'),
           value: _includeInMonthly, onChanged: (v) => setState(() => _includeInMonthly = v),
         ),
+        if (_isYearly) ...[
+          const Divider(height: 1),
+          SwitchListTile(
+            title: const Text('月額表示にも含める', style: TextStyle(fontWeight: FontWeight.w700)),
+            subtitle: const Text('オフなら年額表示・年払いの集計だけに入ります'),
+            value: _showInMonthly, onChanged: (v) => setState(() => _showInMonthly = v),
+          ),
+        ],
         const Divider(height: 1),
         SwitchListTile(
           title: const Text('解約を検討中', style: TextStyle(fontWeight: FontWeight.w700)),
