@@ -23,10 +23,10 @@ class _HomeScreenState extends State<HomeScreen> {
   // --- 状態管理 ---
   List<Map<String, dynamic>> _subs = [];
   // ★デフォルトカテゴリに「クレカ」と「AI」を追加
-  List<String> _genres = ['動画', '音楽', '携帯代', '家賃', 'クレカ', 'AI', '副業', 'その他'];
+  List<String> _genres = ['動画', '音楽', '携帯代', '家賃', 'クレカ', 'AI', '副業', 'ゲーム', '家計管理', 'その他'];
   Map<String, int> _genreColors = {};
   String _searchQuery = '';
-  String _sortBy = 'date';
+  String _sortBy = 'price'; // 金額が高い順がデフォルト
   String? _filterGenre; // nullなら全カテゴリ
   final GlobalKey _captureKey = GlobalKey(); // 画面保存用
   int _touchedIndex = -1; // 分析グラフでタップ中のカテゴリ
@@ -55,19 +55,24 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {
       _subs = List<Map<String, dynamic>>.from(json.decode(prefs.getString('subscription_list') ?? '[]'));
       // デフォルト値にも「クレカ」「AI」を反映
-      _genres = List<String>.from(json.decode(prefs.getString('genre_list') ?? '["動画", "音楽", "携帯代", "家賃", "クレカ", "AI", "副業", "その他"]'));
+      _genres = List<String>.from(json.decode(prefs.getString('genre_list') ?? '["動画", "音楽", "携帯代", "家賃", "クレカ", "AI", "副業", "ゲーム", "家計管理", "その他"]'));
       _genreColors = Map<String, int>.from(json.decode(prefs.getString('genre_colors') ?? '{}'));
-      // 既存の保存データにも「副業」を1度だけ追加する(後で削除しても復活しない)
-      if (!(prefs.getBool('genre_added_sidejob') ?? false)) {
-        if (!_genres.contains('副業')) {
-          final i = _genres.indexOf('その他');
-          _genres.insert(i >= 0 ? i : _genres.length, '副業');
+      // 既存の保存データにも新しいデフォルトカテゴリを1度だけ追加する(後で削除しても復活しない)
+      if (!(prefs.getBool('genre_added_v2') ?? false)) {
+        for (final g in ['副業', 'ゲーム', '家計管理']) {
+          if (!_genres.contains(g)) _genres.add(g);
         }
-        prefs.setBool('genre_added_sidejob', true);
-        prefs.setString('genre_list', json.encode(_genres));
+        prefs.setBool('genre_added_v2', true);
       }
+      _keepOtherLast();
+      prefs.setString('genre_list', json.encode(_genres));
       _sortList();
     });
+  }
+
+  // 「その他」は常に一番後ろにする
+  void _keepOtherLast() {
+    if (_genres.remove('その他')) _genres.add('その他');
   }
 
   Future<void> _saveAllData() async {
@@ -689,7 +694,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ScaffoldMessenger.of(this.context).showSnackBar(const SnackBar(content: Text('同じ名前のカテゴリがあります'), behavior: SnackBarBehavior.floating));
             return;
           }
-          setState(() { setModalState(() => _genres.add(name)); _saveAllData(); });
+          setState(() { setModalState(() { _genres.add(name); _keepOtherLast(); }); _saveAllData(); });
           addController.clear();
         }
         return Padding(
