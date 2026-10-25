@@ -91,21 +91,19 @@ class _HomeScreenState extends State<HomeScreen> {
     return nextDate.difference(today).inDays;
   }
 
-  int get _totalMonthlyPrice {
-    return _subs.fold(0, (sum, item) {
-      if (!(item['includeInMonthly'] ?? true)) return sum;
-      int p = item['price'] as int;
-      return sum + ((item['isYearly'] ?? false) ? (p / 12).round() : p);
-    });
+  // 年払いは「月額にも含める」をオンにしたものだけ月額表示に入る(年額表示では全部入る)
+  bool _inView(Map<String, dynamic> item) {
+    final yearly = item['isYearly'] ?? false;
+    return !yearly || _isYearlyView || (item['showInMonthly'] ?? false);
   }
 
-  int get _reviewTotalPrice {
-    return _subs.fold(0, (sum, item) {
-      if (!(item['isReviewing'] ?? false)) return sum;
-      int p = item['price'] as int;
-      return sum + ((item['isYearly'] ?? false) ? (p / 12).round() : p);
-    });
-  }
+  int get _totalPrice => _subs
+      .where((i) => (i['includeInMonthly'] ?? true) && _inView(i))
+      .fold(0, (sum, i) => sum + _displayPrice(i));
+
+  int get _reviewPrice => _subs
+      .where((i) => (i['isReviewing'] ?? false) && _inView(i))
+      .fold(0, (sum, i) => sum + _displayPrice(i));
 
   void _sortList() {
     setState(() {
@@ -231,8 +229,9 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildSummaryHeader() {
     final cs = Theme.of(context).colorScheme;
     final on = cs.onPrimary;
-    int displayPrice = _isYearlyView ? _totalMonthlyPrice * 12 : _totalMonthlyPrice;
-    int displayReviewPrice = _isYearlyView ? _reviewTotalPrice * 12 : _reviewTotalPrice;
+    final int displayPrice = _totalPrice;
+    final int displayReviewPrice = _reviewPrice;
+    final int excludedYearly = _isYearlyView ? 0 : _subs.where((i) => (i['isYearly'] ?? false) && (i['includeInMonthly'] ?? true) && !_inView(i)).length;
     final counted = _subs.where((i) => i['includeInMonthly'] ?? true);
     final int monthlyBilled = counted.where((i) => !(i['isYearly'] ?? false)).fold(0, (sum, i) => sum + (i['price'] as int));
     final int yearlyBilled = counted.where((i) => i['isYearly'] ?? false).fold(0, (sum, i) => sum + (i['price'] as int));
@@ -252,6 +251,7 @@ class _HomeScreenState extends State<HomeScreen> {
             Text(_isYearlyView ? '年間合計' : '月間合計', style: TextStyle(color: on.withOpacity(0.8), fontWeight: FontWeight.bold)),
             const SizedBox(height: 2),
             FittedBox(fit: BoxFit.scaleDown, child: Text('${_formatter.format(displayPrice)} 円', style: TextStyle(fontSize: 38, color: on, fontWeight: FontWeight.w900, letterSpacing: -1))),
+            if (excludedYearly > 0) Text('年払い$excludedYearly件は含まず', style: TextStyle(fontSize: 12, color: on.withOpacity(0.8))),
           ])),
           Icon(Icons.auto_graph_rounded, color: on.withOpacity(0.35), size: 48),
         ]),
@@ -385,8 +385,10 @@ class _HomeScreenState extends State<HomeScreen> {
   // 月払い/年払いの区切り見出し(件数と小計つき)
   Widget _buildSectionHeader(bool yearly, List<Map<String, dynamic>> items) {
     final cs = Theme.of(context).colorScheme;
-    final subtotal = items.where((i) => i['includeInMonthly'] ?? true).fold<int>(0, (sum, i) => sum + _displayPrice(i));
-    final unit = _isYearlyView ? '年' : '月';
+    final counted = items.where((i) => i['includeInMonthly'] ?? true);
+    // 年払いセクションは実際の請求額(年額)、月払いは表示中の単位で小計
+    final subtotal = counted.fold<int>(0, (sum, i) => sum + (yearly ? i['price'] as int : _displayPrice(i)));
+    final unit = yearly ? '年' : (_isYearlyView ? '年' : '月');
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 18, 20, 4),
       child: Row(children: [
@@ -468,6 +470,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         _buildDaysBadge(diff),
                         Text(dateText, style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant)),
                         _buildTag(item['genre'], gc),
+                        if (yearly && (item['showInMonthly'] ?? false)) _buildTag('月額にも含む', Colors.indigo),
                         if (reviewing) _buildTag('検討中', Colors.orange, icon: Icons.warning_amber_rounded),
                         if (!include) _buildTag('合計外', Colors.grey),
                       ]),
@@ -533,13 +536,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildAnalysisTab() {
     final cs = Theme.of(context).colorScheme;
-    final mul = _isYearlyView ? 12 : 1;
-    int monthlyOf(Map<String, dynamic> item) => (item['isYearly'] ?? false) ? (item['price'] / 12).round() : item['price'] as int;
-
-    final counted = _subs.where((i) => i['includeInMonthly'] ?? true).toList();
+    final counted = _subs.where((i) => (i['includeInMonthly'] ?? true) && _inView(i)).toList();
     final Map<String, int> totals = {};
     for (var item in counted) {
-      totals[item['genre']] = (totals[item['genre']] ?? 0) + monthlyOf(item) * mul;
+      totals[item['genre']] = (totals[item['genre']] ?? 0) + _displayPrice(item);
     }
     if (totals.isEmpty) {
       return Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -550,7 +550,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     final entries = totals.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
     final total = entries.fold<int>(0, (sum, e) => sum + e.value);
-    final top = counted.toList()..sort((a, b) => monthlyOf(b).compareTo(monthlyOf(a)));
+    final top = counted.toList()..sort((a, b) => _displayPrice(b).compareTo(_displayPrice(a)));
     final topItems = top.take(5).toList();
     final touched = (_touchedIndex >= 0 && _touchedIndex < entries.length) ? entries[_touchedIndex] : null;
     final unitLabel = _isYearlyView ? '年間合計' : '月間合計';
@@ -616,9 +616,9 @@ class _HomeScreenState extends State<HomeScreen> {
             for (final item in topItems)
               _barRow(
                 label: item['name'], color: _getGenreColor(item['genre']),
-                ratio: monthlyOf(item) / monthlyOf(topItems.first),
-                amount: '${_formatter.format(monthlyOf(item) * mul)}円',
-                sub: '${(monthlyOf(item) * mul / total * 100).toStringAsFixed(0)}%',
+                ratio: _displayPrice(item) / _displayPrice(topItems.first),
+                amount: '${_formatter.format(_displayPrice(item))}円',
+                sub: '${(_displayPrice(item) / total * 100).toStringAsFixed(0)}%',
               ),
           ]),
         ),
