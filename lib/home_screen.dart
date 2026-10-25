@@ -41,6 +41,20 @@ class _HomeScreenState extends State<HomeScreen> {
     const Color(0xFFCE93D8), const Color(0xFFFFCC80), const Color(0xFFFFF59D), const Color(0xFF80DEEA),
     const Color(0xFF000080), const Color(0xFF000000), const Color(0xFF1A237E),
     const Color(0xFF0D47A1), const Color(0xFF004D40), const Color(0xFF37474F), const Color(0xFF212121),
+    // ビビッド系(紫〜ピンク)
+    const Color(0xFF651FFF), const Color(0xFF7C4DFF), const Color(0xFF8E2DE2), const Color(0xFFAA00FF),
+    const Color(0xFFD500F9), const Color(0xFFE040FB), const Color(0xFFFF2D95), const Color(0xFFFF4081),
+    const Color(0xFFF50057), const Color(0xFFFF1744),
+  ];
+
+  // ヘッダーのグラデーションごと変わるビビッドなプリセット(開始色, 終了色)
+  final List<(String, Color, Color)> gradientPresets = [
+    ('紫→ピンク', const Color(0xFF8E2DE2), const Color(0xFFFF2D95)),
+    ('マゼンタ→紫', const Color(0xFFD500F9), const Color(0xFF651FFF)),
+    ('青→紫', const Color(0xFF2979FF), const Color(0xFFAA00FF)),
+    ('ピンク→オレンジ', const Color(0xFFFF2D95), const Color(0xFFFF9100)),
+    ('赤→マゼンタ', const Color(0xFFFF1744), const Color(0xFFD500F9)),
+    ('シアン→青', const Color(0xFF00B8D4), const Color(0xFF2962FF)),
   ];
 
   @override
@@ -227,6 +241,16 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Color _headerEnd(ColorScheme cs) {
+    final preset = MyApp.of(context)?.headerEnd;
+    if (preset != null) {
+      final p = HSLColor.fromColor(preset);
+      if (cs.brightness == Brightness.dark) {
+        // ダークは主色の明るさに合わせて色相だけ使う
+        final base = HSLColor.fromColor(cs.primary);
+        return base.withHue(p.hue).toColor();
+      }
+      return p.withLightness(p.lightness.clamp(0.3, 0.55)).toColor();
+    }
     if (cs.brightness == Brightness.dark) return Color.lerp(cs.primary, cs.tertiary, 0.55)!;
     final hsl = HSLColor.fromColor(cs.primary);
     return hsl.withHue((hsl.hue + 35) % 360).withSaturation((hsl.saturation + 0.1).clamp(0.0, 1.0)).toColor();
@@ -788,11 +812,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _showSettings(bool isDark) {
     showModalBottomSheet(
-      context: context,
+      context: context, isScrollControlled: true, useSafeArea: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
       builder: (context) {
         final cs = Theme.of(context).colorScheme;
-        return SafeArea(child: Padding(
+        return SafeArea(child: SingleChildScrollView(child: Padding(
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
           child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
             _sheetHandle(),
@@ -802,14 +826,45 @@ class _HomeScreenState extends State<HomeScreen> {
             ListTile(contentPadding: EdgeInsets.zero, leading: const Icon(Icons.download_rounded), title: const Text('CSVでエクスポート', style: TextStyle(fontWeight: FontWeight.w700)), onTap: () { _exportToCSV(); Navigator.pop(context); }),
             const Divider(),
             const SizedBox(height: 8),
+            Text('ビビッドグラデーション', style: TextStyle(fontWeight: FontWeight.w800, color: cs.onSurfaceVariant)),
+            const SizedBox(height: 12),
+            Wrap(spacing: 14, runSpacing: 12, children: gradientPresets.map((g) {
+              final app = MyApp.of(context);
+              final selected = app?.primaryColor.value == g.$2.value && app?.headerEnd?.value == g.$3.value;
+              return GestureDetector(
+                onTap: () { MyApp.of(context)?.changeColor(g.$2, end: g.$3); Navigator.pop(context); },
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  Container(
+                    width: 52, height: 52,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [g.$2, g.$3]),
+                      border: Border.all(color: selected ? cs.onSurface : Colors.transparent, width: 3),
+                    ),
+                    child: selected ? const Icon(Icons.check_rounded, color: Colors.white) : null,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(g.$1, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700)),
+                ]),
+              );
+            }).toList()),
+            const SizedBox(height: 18),
             Text('テーマカラー', style: TextStyle(fontWeight: FontWeight.w800, color: cs.onSurfaceVariant)),
             const SizedBox(height: 12),
-            Wrap(spacing: 12, runSpacing: 12, children: themeColors.map((c) => GestureDetector(
-              onTap: () { MyApp.of(context)?.changeColor(c); Navigator.pop(context); },
-              child: Container(width: 38, height: 38, decoration: BoxDecoration(color: c, shape: BoxShape.circle, border: Border.all(color: cs.outlineVariant))),
-            )).toList()),
+            Wrap(spacing: 12, runSpacing: 12, children: themeColors.map((c) {
+              final app = MyApp.of(context);
+              final selected = app?.primaryColor.value == c.value && app?.headerEnd == null;
+              return GestureDetector(
+                onTap: () { MyApp.of(context)?.changeColor(c); Navigator.pop(context); },
+                child: Container(
+                  width: 38, height: 38,
+                  decoration: BoxDecoration(color: c, shape: BoxShape.circle, border: Border.all(color: selected ? cs.onSurface : cs.outlineVariant, width: selected ? 3 : 1)),
+                  child: selected ? Icon(Icons.check_rounded, size: 18, color: _onColor(c)) : null,
+                ),
+              );
+            }).toList()),
           ]),
-        ));
+        )));
       },
     );
   }
