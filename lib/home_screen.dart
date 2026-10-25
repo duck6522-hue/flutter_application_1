@@ -23,7 +23,7 @@ class _HomeScreenState extends State<HomeScreen> {
   // --- 状態管理 ---
   List<Map<String, dynamic>> _subs = [];
   // ★デフォルトカテゴリに「クレカ」と「AI」を追加
-  List<String> _genres = ['動画', '音楽', '携帯代', '家賃', 'クレカ', 'AI', 'その他'];
+  List<String> _genres = ['動画', '音楽', '携帯代', '家賃', 'クレカ', 'AI', '副業', 'その他'];
   Map<String, int> _genreColors = {};
   String _searchQuery = '';
   String _sortBy = 'date';
@@ -55,8 +55,17 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {
       _subs = List<Map<String, dynamic>>.from(json.decode(prefs.getString('subscription_list') ?? '[]'));
       // デフォルト値にも「クレカ」「AI」を反映
-      _genres = List<String>.from(json.decode(prefs.getString('genre_list') ?? '["動画", "音楽", "携帯代", "家賃", "クレカ", "AI", "その他"]'));
+      _genres = List<String>.from(json.decode(prefs.getString('genre_list') ?? '["動画", "音楽", "携帯代", "家賃", "クレカ", "AI", "副業", "その他"]'));
       _genreColors = Map<String, int>.from(json.decode(prefs.getString('genre_colors') ?? '{}'));
+      // 既存の保存データにも「副業」を1度だけ追加する(後で削除しても復活しない)
+      if (!(prefs.getBool('genre_added_sidejob') ?? false)) {
+        if (!_genres.contains('副業')) {
+          final i = _genres.indexOf('その他');
+          _genres.insert(i >= 0 ? i : _genres.length, '副業');
+        }
+        prefs.setBool('genre_added_sidejob', true);
+        prefs.setString('genre_list', json.encode(_genres));
+      }
       _sortList();
     });
   }
