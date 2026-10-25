@@ -19,7 +19,8 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMixin {
+  late final TabController _tabController = TabController(length: 2, vsync: this);
   // --- 状態管理 ---
   List<Map<String, dynamic>> _subs = [];
   // ★デフォルトカテゴリに「クレカ」と「AI」を追加
@@ -29,6 +30,8 @@ class _HomeScreenState extends State<HomeScreen> {
   String _sortBy = 'price'; // 金額が高い順がデフォルト
   String? _filterGenre; // nullなら全カテゴリ
   final GlobalKey _captureKey = GlobalKey(); // 画面保存用
+  final GlobalKey _shotKey = GlobalKey(); // 全体撮影用(縦長)
+  bool _capturing = false; // 撮影中だけ全件を裏で描画する
   int _touchedIndex = -1; // 分析グラフでタップ中のカテゴリ
   ViewMode _viewMode = ViewMode.monthly; // 一番よく見る月額表示がデフォルト
   bool get _isYearlyView => _viewMode == ViewMode.yearly || _viewMode == ViewMode.yearlyOnly;
@@ -61,6 +64,12 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _loadAllData();
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
   }
 
   // --- データ保存・読込 ---
@@ -156,25 +165,67 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   // --- 画面を画像(PNG)で保存 ---
+  // 撮影のときだけ、本物の画面の裏に全件を縦長で描画して丸ごと画像にする(スクロールで切れない)
+  List<Map<String, dynamic>> get _filteredSubs => _subs.where((sub) =>
+      _inView(sub) &&
+      sub['name'].toLowerCase().contains(_searchQuery.toLowerCase()) &&
+      (_filterGenre == null || sub['genre'] == _filterGenre)).toList();
+
+  Widget _buildCaptureLayer() {
+    final bg = Theme.of(context).scaffoldBackgroundColor;
+    final stamp = DateFormat('yyyy/MM/dd').format(DateTime.now());
+    final children = _tabController.index == 0
+        ? [_buildSummaryHeader(), ..._listItems(_filteredSubs)]
+        : _analysisChildren();
+    // スクロール領域の中に置くと、画面より縦に長くても全体が描画される
+    return Positioned.fill(
+      child: SingleChildScrollView(
+        physics: const NeverScrollableScrollPhysics(),
+        child: RepaintBoundary(
+          key: _shotKey,
+          child: Material(
+            color: bg,
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              const SizedBox(height: 8),
+              ...children,
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 14, 20, 20),
+                child: Text('サブスク管理 Pro ・ $stamp', textAlign: TextAlign.right, style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+              ),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _saveScreenshot() async {
+    if (_capturing) return;
+    setState(() => _capturing = true);
     try {
-      final boundary = _captureKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
-      if (boundary == null) return;
-      final image = await boundary.toImage(pixelRatio: 2.5);
+      await WidgetsBinding.instance.endOfFrame;
+      await WidgetsBinding.instance.endOfFrame;
+      final boundary = _shotKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+      if (boundary == null) throw StateError('no boundary');
+      // 縦に長いときは解像度を下げて、画像サイズの上限(約8000px)に収める
+      final ratio = (8000 / boundary.size.height).clamp(1.0, 2.5).toDouble();
+      final image = await boundary.toImage(pixelRatio: ratio);
       final data = await image.toByteData(format: ui.ImageByteFormat.png);
-      if (data == null) return;
+      if (data == null) throw StateError('no data');
       final blob = html.Blob([data.buffer.asUint8List()], 'image/png');
       final url = html.Url.createObjectUrlFromBlob(blob);
-      final stamp = DateFormat('yyyyMMdd_HHmm').format(DateTime.now());
-      html.AnchorElement(href: url)..setAttribute('download', 'subsc_$stamp.png')..click();
+      final name = DateFormat('yyyyMMdd_HHmm').format(DateTime.now());
+      html.AnchorElement(href: url)..setAttribute('download', 'subsc_$name.png')..click();
       html.Url.revokeObjectUrl(url);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('画面を画像で保存しました'), behavior: SnackBarBehavior.floating));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('全体を縦長の画像で保存しました'), behavior: SnackBarBehavior.floating));
       }
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('画像の保存に失敗しました'), behavior: SnackBarBehavior.floating));
       }
+    } finally {
+      if (mounted) setState(() => _capturing = false);
     }
   }
 
@@ -200,9 +251,7 @@ class _HomeScreenState extends State<HomeScreen> {
         sub['name'].toLowerCase().contains(_searchQuery.toLowerCase()) &&
         (_filterGenre == null || sub['genre'] == _filterGenre)).toList();
 
-    return DefaultTabController(
-      length: 2,
-      child: Scaffold(
+    return Scaffold(
         appBar: AppBar(
           title: const Text('サブスク管理 Pro', style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: -1)),
           actions: [
@@ -215,28 +264,31 @@ class _HomeScreenState extends State<HomeScreen> {
             IconButton(tooltip: '画面を画像で保存', icon: const Icon(Icons.photo_camera_outlined), onPressed: _saveScreenshot),
             IconButton(icon: const Icon(Icons.tune_rounded), onPressed: () => _showSettings(isDark)),
           ],
-          bottom: const TabBar(tabs: [Tab(text: '一覧'), Tab(text: '分析レポート')]),
+          bottom: TabBar(controller: _tabController, tabs: const [Tab(text: '一覧'), Tab(text: '分析レポート')]),
         ),
-        body: RepaintBoundary(
-          key: _captureKey,
-          child: ColoredBox(
-            color: Theme.of(context).scaffoldBackgroundColor,
-            child: TabBarView(
-              children: [
-                Column(children: [
-                  Expanded(child: _buildListView(filteredSubs)),
-                ]),
-                _buildAnalysisTab(),
-              ],
+        body: Stack(children: [
+          if (_capturing) _buildCaptureLayer(), // 撮影中だけ、本物の画面の裏に全件を描画
+          Positioned.fill(child: RepaintBoundary(
+            key: _captureKey,
+            child: ColoredBox(
+              color: Theme.of(context).scaffoldBackgroundColor,
+              child: TabBarView(
+                controller: _tabController,
+                children: [
+                  Column(children: [
+                    Expanded(child: _buildListView(filteredSubs)),
+                  ]),
+                  _buildAnalysisTab(),
+                ],
+              ),
             ),
-          ),
-        ),
+          )),
+        ]),
         floatingActionButton: FloatingActionButton.extended(
           onPressed: () => _openAddScreen(),
           label: const Text('サブスクを追加', style: TextStyle(fontWeight: FontWeight.bold)),
           icon: const Icon(Icons.add),
         ),
-      ),
     );
   }
 
@@ -477,38 +529,39 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildListView(List<Map<String, dynamic>> list) {
-    // 月払い → 年払いの順に、見出しを挟んで並べる
+  // 月払い → 年払いの順に、見出しを挟んで並べたウィジェット列(一覧本体)
+  List<Widget> _listItems(List<Map<String, dynamic>> list) {
     final monthly = list.where((i) => !(i['isYearly'] ?? false)).toList();
     final yearlyItems = list.where((i) => i['isYearly'] ?? false).toList();
-    final List<Object> rows = [
-      if (monthly.isNotEmpty) ...[_buildSectionHeader(false, monthly), ...monthly],
-      if (yearlyItems.isNotEmpty) ...[_buildSectionHeader(true, yearlyItems), ...yearlyItems],
+    return [
+      if (monthly.isNotEmpty) ...[_buildSectionHeader(false, monthly), ...monthly.map(_buildSubCard)],
+      if (yearlyItems.isNotEmpty) ...[_buildSectionHeader(true, yearlyItems), ...yearlyItems.map(_buildSubCard)],
+      if (list.isEmpty)
+        Padding(
+          padding: const EdgeInsets.all(48),
+          child: Column(children: [
+            const Icon(Icons.inbox_rounded, size: 56, color: Colors.grey),
+            const SizedBox(height: 8),
+            Text(_viewMode == ViewMode.yearlyOnly ? '年払いのサブスクがありません' : (_viewMode == ViewMode.monthlyOnly ? '月払いのサブスクがありません' : '該当するサブスクがありません'), style: const TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
+          ]),
+        ),
     ];
-    return ListView.builder(
+  }
+
+  Widget _buildListView(List<Map<String, dynamic>> list) {
+    return ListView(
       padding: const EdgeInsets.only(bottom: 96), // FABと重ならない余白
-      itemCount: rows.length + 1,
-      itemBuilder: (context, index) {
-        if (index == 0) {
-          return Column(children: [
-            _buildSummaryHeader(),
-            _buildToggleSwitch(),
-            _buildSearchField(),
-            _buildFilterBar(),
-            if (list.isEmpty)
-              Padding(
-                padding: const EdgeInsets.all(48),
-                child: Column(children: [
-                  const Icon(Icons.inbox_rounded, size: 56, color: Colors.grey),
-                  const SizedBox(height: 8),
-                  Text(_viewMode == ViewMode.yearlyOnly ? '年払いのサブスクがありません' : (_viewMode == ViewMode.monthlyOnly ? '月払いのサブスクがありません' : '該当するサブスクがありません'), style: const TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
-                ]),
-              ),
-          ]);
-        }
-        final row = rows[index - 1];
-        if (row is Widget) return row;
-        final item = row as Map<String, dynamic>;
+      children: [
+        _buildSummaryHeader(),
+        _buildToggleSwitch(),
+        _buildSearchField(),
+        _buildFilterBar(),
+        ..._listItems(list),
+      ],
+    );
+  }
+
+  Widget _buildSubCard(Map<String, dynamic> item) {
         final bool include = item['includeInMonthly'] ?? true;
         final bool reviewing = item['isReviewing'] ?? false;
         final bool yearly = item['isYearly'] ?? false;
@@ -560,8 +613,6 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
         );
-      },
-    );
   }
 
   Widget _analysisCard({required String title, required Widget child}) {
@@ -604,7 +655,9 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildAnalysisTab() {
+  Widget _buildAnalysisTab() => ListView(padding: const EdgeInsets.only(top: 10, bottom: 96), children: _analysisChildren());
+
+  List<Widget> _analysisChildren() {
     final cs = Theme.of(context).colorScheme;
     final counted = _subs.where((i) => (i['includeInMonthly'] ?? true) && _inView(i)).toList();
     final Map<String, int> totals = {};
@@ -612,11 +665,14 @@ class _HomeScreenState extends State<HomeScreen> {
       totals[item['genre']] = (totals[item['genre']] ?? 0) + _displayPrice(item);
     }
     if (totals.isEmpty) {
-      return Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Icon(Icons.donut_large_rounded, size: 56, color: cs.onSurfaceVariant),
-        const SizedBox(height: 8),
-        Text('分析データがありません', style: TextStyle(color: cs.onSurfaceVariant, fontWeight: FontWeight.bold)),
-      ]));
+      return [Padding(
+        padding: const EdgeInsets.only(top: 80, bottom: 80),
+        child: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.donut_large_rounded, size: 56, color: cs.onSurfaceVariant),
+          const SizedBox(height: 8),
+          Text('分析データがありません', style: TextStyle(color: cs.onSurfaceVariant, fontWeight: FontWeight.bold)),
+        ])),
+      )];
     }
     final entries = totals.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
     final total = entries.fold<int>(0, (sum, e) => sum + e.value);
@@ -625,9 +681,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final touched = (_touchedIndex >= 0 && _touchedIndex < entries.length) ? entries[_touchedIndex] : null;
     final unitLabel = _modeTitle;
 
-    return ListView(
-      padding: const EdgeInsets.only(top: 10, bottom: 96),
-      children: [
+    return [
         _analysisCard(
           title: 'カテゴリ別の割合',
           child: Column(children: [
@@ -692,8 +746,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
           ]),
         ),
-      ],
-    );
+    ];
   }
 
   // --- カテゴリ管理・色選択 ---
