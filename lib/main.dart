@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'home_screen.dart';
 
 void main() => runApp(const MyApp());
@@ -13,9 +14,56 @@ class MyApp extends StatefulWidget {
 class _MyAppState extends State<MyApp> {
   ThemeMode _themeMode = ThemeMode.system;
   Color _primaryColor = Colors.blue;
+  Color? _headerEnd; // ヘッダーのグラデーション終端(プリセット選択時のみ)
 
-  void toggleDarkMode(bool isDark) => setState(() => _themeMode = isDark ? ThemeMode.dark : ThemeMode.light);
-  void changeColor(Color color) => setState(() => _primaryColor = color);
+  Color get primaryColor => _primaryColor;
+  Color? get headerEnd => _headerEnd;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTheme();
+  }
+
+  // 選んだテーマ色を保存して、開き直しても残す
+  Future<void> _loadTheme() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final c = prefs.getInt('theme_color');
+      final e = prefs.getInt('theme_end');
+      final dark = prefs.getString('theme_mode');
+      if (!mounted) return;
+      setState(() {
+        if (c != null) _primaryColor = Color(c);
+        _headerEnd = e == null ? null : Color(e);
+        if (dark == 'dark') _themeMode = ThemeMode.dark;
+        if (dark == 'light') _themeMode = ThemeMode.light;
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _saveTheme() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt('theme_color', _primaryColor.value);
+      if (_headerEnd == null) {
+        await prefs.remove('theme_end');
+      } else {
+        await prefs.setInt('theme_end', _headerEnd!.value);
+      }
+      await prefs.setString('theme_mode', _themeMode == ThemeMode.dark ? 'dark' : (_themeMode == ThemeMode.light ? 'light' : 'system'));
+    } catch (_) {}
+  }
+
+  void toggleDarkMode(bool isDark) {
+    setState(() => _themeMode = isDark ? ThemeMode.dark : ThemeMode.light);
+    _saveTheme();
+  }
+
+  void changeColor(Color color, {Color? end}) {
+    setState(() { _primaryColor = color; _headerEnd = end; });
+    _saveTheme();
+  }
 
   @override
   Widget build(BuildContext context) {
