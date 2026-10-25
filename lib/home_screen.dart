@@ -26,7 +26,7 @@ class _HomeScreenState extends State<HomeScreen> {
   List<String> _genres = ['動画', '音楽', '携帯代', '家賃', 'クレカ', 'AI', '副業', 'その他'];
   Map<String, int> _genreColors = {};
   String _searchQuery = '';
-  String _sortBy = 'date';
+  String _sortBy = 'price'; // 金額が高い順がデフォルト
   String? _filterGenre; // nullなら全カテゴリ
   final GlobalKey _captureKey = GlobalKey(); // 画面保存用
   int _touchedIndex = -1; // 分析グラフでタップ中のカテゴリ
