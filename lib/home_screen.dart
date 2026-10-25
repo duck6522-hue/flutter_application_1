@@ -10,6 +10,9 @@ import 'add_screen.dart';
 import 'app_pill.dart';
 import 'main.dart';
 
+// 一覧・合計の表示モード
+enum ViewMode { monthly, yearly, monthlyOnly, yearlyOnly }
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
   @override
@@ -20,14 +23,15 @@ class _HomeScreenState extends State<HomeScreen> {
   // --- 状態管理 ---
   List<Map<String, dynamic>> _subs = [];
   // ★デフォルトカテゴリに「クレカ」と「AI」を追加
-  List<String> _genres = ['動画', '音楽', '携帯代', '家賃', 'クレカ', 'AI', 'その他'];
+  List<String> _genres = ['動画', '音楽', '携帯代', '家賃', 'クレカ', 'AI', '副業', 'その他'];
   Map<String, int> _genreColors = {};
   String _searchQuery = '';
   String _sortBy = 'date';
   String? _filterGenre; // nullなら全カテゴリ
   final GlobalKey _captureKey = GlobalKey(); // 画面保存用
   int _touchedIndex = -1; // 分析グラフでタップ中のカテゴリ
-  bool _isYearlyView = false;
+  ViewMode _viewMode = ViewMode.monthly; // 一番よく見る月額表示がデフォルト
+  bool get _isYearlyView => _viewMode == ViewMode.yearly || _viewMode == ViewMode.yearlyOnly;
   final _formatter = NumberFormat('#,###');
 
   // ★復活！こだわりの21色パレット
@@ -51,8 +55,17 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {
       _subs = List<Map<String, dynamic>>.from(json.decode(prefs.getString('subscription_list') ?? '[]'));
       // デフォルト値にも「クレカ」「AI」を反映
-      _genres = List<String>.from(json.decode(prefs.getString('genre_list') ?? '["動画", "音楽", "携帯代", "家賃", "クレカ", "AI", "その他"]'));
+      _genres = List<String>.from(json.decode(prefs.getString('genre_list') ?? '["動画", "音楽", "携帯代", "家賃", "クレカ", "AI", "副業", "その他"]'));
       _genreColors = Map<String, int>.from(json.decode(prefs.getString('genre_colors') ?? '{}'));
+      // 既存の保存データにも「副業」を1度だけ追加する(後で削除しても復活しない)
+      if (!(prefs.getBool('genre_added_sidejob') ?? false)) {
+        if (!_genres.contains('副業')) {
+          final i = _genres.indexOf('その他');
+          _genres.insert(i >= 0 ? i : _genres.length, '副業');
+        }
+        prefs.setBool('genre_added_sidejob', true);
+        prefs.setString('genre_list', json.encode(_genres));
+      }
       _sortList();
     });
   }
@@ -91,10 +104,17 @@ class _HomeScreenState extends State<HomeScreen> {
     return nextDate.difference(today).inDays;
   }
 
-  // 年払いは「月額にも含める」をオンにしたものだけ月額表示に入る(年額表示では全部入る)
+  // 表示モードごとに、どのサブスクを対象にするか
+  //  月額: 月払い + 「月額にも含める」をオンにした年払い / 年額: 全部
+  //  月払いのみ: 月払いだけ / 年払いのみ: 年払いだけ
   bool _inView(Map<String, dynamic> item) {
     final yearly = item['isYearly'] ?? false;
-    return !yearly || _isYearlyView || (item['showInMonthly'] ?? false);
+    switch (_viewMode) {
+      case ViewMode.monthly: return !yearly || (item['showInMonthly'] ?? false);
+      case ViewMode.yearly: return true;
+      case ViewMode.monthlyOnly: return !yearly;
+      case ViewMode.yearlyOnly: return yearly;
+    }
   }
 
   int get _totalPrice => _subs
@@ -157,6 +177,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     bool isDark = Theme.of(context).brightness == Brightness.dark;
     final filteredSubs = _subs.where((sub) =>
+        _inView(sub) &&
         sub['name'].toLowerCase().contains(_searchQuery.toLowerCase()) &&
         (_filterGenre == null || sub['genre'] == _filterGenre)).toList();
 
@@ -206,6 +227,15 @@ class _HomeScreenState extends State<HomeScreen> {
     return hsl.withHue((hsl.hue + 35) % 360).withSaturation((hsl.saturation + 0.1).clamp(0.0, 1.0)).toColor();
   }
 
+  String get _modeTitle {
+    switch (_viewMode) {
+      case ViewMode.monthly: return '月間合計';
+      case ViewMode.yearly: return '年間合計';
+      case ViewMode.monthlyOnly: return '月払いの合計';
+      case ViewMode.yearlyOnly: return '年払いの合計';
+    }
+  }
+
   Widget _headerTile({required String label, required int value, required String unit, required IconData icon, required Color on, String? sub}) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -231,7 +261,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final on = cs.onPrimary;
     final int displayPrice = _totalPrice;
     final int displayReviewPrice = _reviewPrice;
-    final int excludedYearly = _isYearlyView ? 0 : _subs.where((i) => (i['isYearly'] ?? false) && (i['includeInMonthly'] ?? true) && !_inView(i)).length;
+    final int excludedYearly = _viewMode != ViewMode.monthly ? 0 : _subs.where((i) => (i['isYearly'] ?? false) && (i['includeInMonthly'] ?? true) && !_inView(i)).length;
     final counted = _subs.where((i) => i['includeInMonthly'] ?? true);
     final int monthlyBilled = counted.where((i) => !(i['isYearly'] ?? false)).fold(0, (sum, i) => sum + (i['price'] as int));
     final int yearlyBilled = counted.where((i) => i['isYearly'] ?? false).fold(0, (sum, i) => sum + (i['price'] as int));
@@ -248,19 +278,23 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Column(children: [
         Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(_isYearlyView ? '年間合計' : '月間合計', style: TextStyle(color: on.withOpacity(0.8), fontWeight: FontWeight.bold)),
+            Text(_modeTitle, style: TextStyle(color: on.withOpacity(0.8), fontWeight: FontWeight.bold)),
             const SizedBox(height: 2),
             FittedBox(fit: BoxFit.scaleDown, child: Text('${_formatter.format(displayPrice)} 円', style: TextStyle(fontSize: 38, color: on, fontWeight: FontWeight.w900, letterSpacing: -1))),
             if (excludedYearly > 0) Text('年払い$excludedYearly件は含まず', style: TextStyle(fontSize: 12, color: on.withOpacity(0.8))),
+            if (_viewMode == ViewMode.yearlyOnly && displayPrice > 0) Text('月あたり 約${_formatter.format((displayPrice / 12).round())}円', style: TextStyle(fontSize: 12, color: on.withOpacity(0.8))),
+            if (_viewMode == ViewMode.monthlyOnly && displayPrice > 0) Text('年間 ${_formatter.format(displayPrice * 12)}円', style: TextStyle(fontSize: 12, color: on.withOpacity(0.8))),
           ])),
           Icon(Icons.auto_graph_rounded, color: on.withOpacity(0.35), size: 48),
         ]),
+        if (_viewMode == ViewMode.monthly || _viewMode == ViewMode.yearly) ...[
         const SizedBox(height: 14),
         IntrinsicHeight(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           Expanded(child: _headerTile(label: '月払い', value: monthlyBilled * (_isYearlyView ? 12 : 1), unit: _isYearlyView ? '年' : '月', icon: Icons.calendar_month_rounded, on: on)),
           const SizedBox(width: 10),
           Expanded(child: _headerTile(label: '年払い', value: yearlyBilled, unit: '年', icon: Icons.event_note_rounded, on: on, sub: _isYearlyView || yearlyBilled == 0 ? null : '月あたり ${_formatter.format((yearlyBilled / 12).round())}円')),
         ])),
+        ],
         if (displayReviewPrice > 0) ...[
           const SizedBox(height: 14),
           Container(
@@ -283,13 +317,20 @@ class _HomeScreenState extends State<HomeScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: SizedBox(
         width: double.infinity,
-        child: SegmentedButton<bool>(
+        child: SegmentedButton<ViewMode>(
+          showSelectedIcon: false,
+          style: const ButtonStyle(
+            visualDensity: VisualDensity.compact,
+            padding: WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 4)),
+          ),
           segments: const [
-            ButtonSegment(value: false, label: Text('月額表示'), icon: Icon(Icons.calendar_month)),
-            ButtonSegment(value: true, label: Text('年額表示'), icon: Icon(Icons.event_note)),
+            ButtonSegment(value: ViewMode.monthly, label: Text('月額', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800))),
+            ButtonSegment(value: ViewMode.yearly, label: Text('年額', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800))),
+            ButtonSegment(value: ViewMode.monthlyOnly, label: Text('月払いのみ', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800))),
+            ButtonSegment(value: ViewMode.yearlyOnly, label: Text('年払いのみ', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800))),
           ],
-          selected: <bool>{_isYearlyView},
-          onSelectionChanged: (set) => setState(() => _isYearlyView = set.first),
+          selected: <ViewMode>{_viewMode},
+          onSelectionChanged: (set) => setState(() => _viewMode = set.first),
         ),
       ),
     );
@@ -386,9 +427,9 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildSectionHeader(bool yearly, List<Map<String, dynamic>> items) {
     final cs = Theme.of(context).colorScheme;
     final counted = items.where((i) => i['includeInMonthly'] ?? true);
-    // 年払いセクションは実際の請求額(年額)、月払いは表示中の単位で小計
-    final subtotal = counted.fold<int>(0, (sum, i) => sum + (yearly ? i['price'] as int : _displayPrice(i)));
-    final unit = yearly ? '年' : (_isYearlyView ? '年' : '月');
+    // 小計は表示中の単位(月/年)で出す
+    final subtotal = counted.fold<int>(0, (sum, i) => sum + _displayPrice(i));
+    final unit = _isYearlyView ? '年' : '月';
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 18, 20, 4),
       child: Row(children: [
@@ -426,12 +467,12 @@ class _HomeScreenState extends State<HomeScreen> {
             _buildSearchField(),
             _buildFilterBar(),
             if (list.isEmpty)
-              const Padding(
-                padding: EdgeInsets.all(48),
+              Padding(
+                padding: const EdgeInsets.all(48),
                 child: Column(children: [
-                  Icon(Icons.inbox_rounded, size: 56, color: Colors.grey),
-                  SizedBox(height: 8),
-                  Text('該当するサブスクがありません', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
+                  const Icon(Icons.inbox_rounded, size: 56, color: Colors.grey),
+                  const SizedBox(height: 8),
+                  Text(_viewMode == ViewMode.yearlyOnly ? '年払いのサブスクがありません' : (_viewMode == ViewMode.monthlyOnly ? '月払いのサブスクがありません' : '該当するサブスクがありません'), style: const TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
                 ]),
               ),
           ]);
@@ -553,7 +594,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final top = counted.toList()..sort((a, b) => _displayPrice(b).compareTo(_displayPrice(a)));
     final topItems = top.take(5).toList();
     final touched = (_touchedIndex >= 0 && _touchedIndex < entries.length) ? entries[_touchedIndex] : null;
-    final unitLabel = _isYearlyView ? '年間合計' : '月間合計';
+    final unitLabel = _modeTitle;
 
     return ListView(
       padding: const EdgeInsets.only(top: 10, bottom: 96),
