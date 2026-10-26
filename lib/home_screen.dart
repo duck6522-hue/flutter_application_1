@@ -24,7 +24,18 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   // --- 状態管理 ---
   List<Map<String, dynamic>> _subs = [];
   // ★デフォルトカテゴリに「クレカ」と「AI」を追加
-  List<String> _genres = ['動画', '音楽', '携帯代', '家賃', 'クレカ', 'AI', '副業', 'ゲーム', '家計管理', 'その他'];
+  // デフォルトのカテゴリ順: 固定費 → エンタメ → ツール → 副業 → その他
+  static const List<String> _defaultGenres = ['家賃', 'ローン', '保険', '携帯代', 'クレカ', '動画', '音楽', 'ゲーム', 'AI', '家計管理', '副業', 'その他'];
+  List<String> _genres = List<String>.from(_defaultGenres);
+
+  // 色を選んでいないデフォルトカテゴリには、並び順に沿って青→紫→ピンクのグラデーションを付ける
+  static final Map<String, Color> _defaultGenreColors = () {
+    final names = _defaultGenres.where((g) => g != 'その他').toList();
+    return {
+      for (var i = 0; i < names.length; i++)
+        names[i]: HSLColor.fromAHSL(1, 215 + i * (335 - 215) / (names.length - 1), 0.85, 0.52).toColor(),
+    };
+  }();
   Map<String, int> _genreColors = {};
   String _searchQuery = '';
   String _sortBy = 'price'; // 金額が高い順がデフォルト
@@ -78,7 +89,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     setState(() {
       _subs = List<Map<String, dynamic>>.from(json.decode(prefs.getString('subscription_list') ?? '[]'));
       // デフォルト値にも「クレカ」「AI」を反映
-      _genres = List<String>.from(json.decode(prefs.getString('genre_list') ?? '["動画", "音楽", "携帯代", "家賃", "クレカ", "AI", "副業", "ゲーム", "家計管理", "その他"]'));
+      _genres = List<String>.from(json.decode(prefs.getString('genre_list') ?? json.encode(_defaultGenres)));
       _genreColors = Map<String, int>.from(json.decode(prefs.getString('genre_colors') ?? '{}'));
       // 既存の保存データにも新しいデフォルトカテゴリを1度だけ追加する(後で削除しても復活しない)
       if (!(prefs.getBool('genre_added_v2') ?? false)) {
@@ -86,6 +97,15 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           if (!_genres.contains(g)) _genres.add(g);
         }
         prefs.setBool('genre_added_v2', true);
+      }
+      // 並び順の見直し(保険・ローンの追加)を1度だけ適用する。削除済みのデフォルトは復活させない
+      if (!(prefs.getBool('genre_order_v3') ?? false)) {
+        final present = _genres.toSet()..addAll(['保険', 'ローン']);
+        final defaults = _defaultGenres.where((g) => g != 'その他' && present.contains(g));
+        final custom = _genres.where((g) => !_defaultGenres.contains(g));
+        final hasOther = _genres.contains('その他');
+        _genres = [...defaults.where((g) => g != '副業'), ...custom, if (present.contains('副業')) '副業', if (hasOther) 'その他'];
+        prefs.setBool('genre_order_v3', true);
       }
       _keepOtherLast();
       prefs.setString('genre_list', json.encode(_genres));
@@ -108,7 +128,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   // --- 便利計算 ---
   // どの背景でも見えるように、明るさを範囲内に収める(黒や薄い黄色対策)
   Color _getGenreColor(String genre) {
-    final base = _genreColors.containsKey(genre) ? Color(_genreColors[genre]!) : Colors.grey.shade500;
+    final base = _genreColors.containsKey(genre) ? Color(_genreColors[genre]!) : (_defaultGenreColors[genre] ?? Colors.grey.shade500);
     final dark = Theme.of(context).brightness == Brightness.dark;
     final hsl = HSLColor.fromColor(base);
     final l = dark ? hsl.lightness.clamp(0.55, 0.85) : hsl.lightness.clamp(0.28, 0.52);
