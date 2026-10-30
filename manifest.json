@@ -1,11 +1,11 @@
 {
-    "name": "flutter_application_1",
-    "short_name": "flutter_application_1",
+    "name": "サブスク管理 Pro",
+    "short_name": "サブスク管理",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#F4F5F9",
+    "theme_color": "#8E2DE2",
+    "description": "サブスクの支払いを見やすく管理するアプリ",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
