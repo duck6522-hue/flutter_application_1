@@ -41,11 +41,17 @@ String buildDiagnosisPrompt({
     final days = daysUntil(i['month'], i['day'], yearly);
     final next = DateTime(today.year, today.month, today.day).add(Duration(days: days));
     final price = yearly ? '${y(i['price'])}/年（月換算 ${y(monthly(i))}）' : '${y(i['price'])}/月';
+    final usage = switch (i['usage']) {
+      'often' => 'よく使う',
+      'sometimes' => 'たまに使う',
+      'rarely' => 'ほぼ使わない',
+      _ => null,
+    };
     final flags = [
       if (reviewing(i)) '解約検討中',
       if (!counted(i)) '合計外',
     ];
-    lines.add('${n + 1}. ${i['name']} | $price | カテゴリ: ${i['genre']} | 次回支払い: ${next.month}/${next.day}（あと$days日）${flags.isEmpty ? '' : ' | ${flags.join('・')}'}');
+    lines.add('${n + 1}. ${i['name']} | $price | カテゴリ: ${i['genre']} | 次回支払い: ${next.month}/${next.day}（あと$days日）${usage == null ? '' : ' | 利用頻度: $usage'}${flags.isEmpty ? '' : ' | ${flags.join('・')}'}');
   }
 
   final stamp = DateFormat('yyyy/MM/dd').format(today);
@@ -66,6 +72,7 @@ String buildDiagnosisPrompt({
 - 年払いは12分割して月額換算しています。
 - 「解約検討中」は、私自身が見直したいと思っているものです。
 - 「合計外」は、集計から除外している項目です（参考情報）。
+- 「利用頻度」は私の自己申告です。記載がないものは未入力で、判断材料にしないでください。
 $incomeFact
 
 【サマリー】

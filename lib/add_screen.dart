@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'app_pill.dart';
+import 'presets.dart';
 
 class AddScreen extends StatefulWidget {
   final Map<String, dynamic>? editData;
@@ -22,6 +23,7 @@ class _AddScreenState extends State<AddScreen> {
   bool _isYearly = false;
   bool _includeInMonthly = true;
   bool _isReviewing = false;
+  String? _usage; // 利用頻度(任意): often / sometimes / rarely
   bool _showInMonthly = false; // 年払いを月額表示にも含めるか(デフォルトは含めない)
 
   @override
@@ -37,6 +39,7 @@ class _AddScreenState extends State<AddScreen> {
       _isYearly = widget.editData!['isYearly'] ?? false;
       _includeInMonthly = widget.editData!['includeInMonthly'] ?? true;
       _isReviewing = widget.editData!['isReviewing'] ?? false;
+      _usage = widget.editData!['usage'];
       _showInMonthly = widget.editData!['showInMonthly'] ?? false;
     }
   }
@@ -46,6 +49,14 @@ class _AddScreenState extends State<AddScreen> {
     _nameController.dispose();
     _priceController.dispose();
     super.dispose();
+  }
+
+  // 候補を選ぶと、名前と(あれば)カテゴリを入れる。金額は変わりやすいので入れない
+  void _applyPreset(ServicePreset p) {
+    setState(() {
+      _nameController.text = p.name;
+      if (widget.genres.contains(p.genre)) _selectedGenre = p.genre;
+    });
   }
 
   int? get _price => int.tryParse(_priceController.text.trim());
@@ -64,6 +75,7 @@ class _AddScreenState extends State<AddScreen> {
       'name': name, 'price': price,
       'month': _selectedMonth, 'day': _selectedDay, 'genre': _selectedGenre,
       'isYearly': _isYearly, 'includeInMonthly': _includeInMonthly, 'isReviewing': _isReviewing, 'showInMonthly': _showInMonthly,
+      'usage': _usage,
     });
   }
 
@@ -149,8 +161,25 @@ class _AddScreenState extends State<AddScreen> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
         children: [
+          if (widget.editData == null)
+            _section('よく使うサービスから選ぶ（任意）', SizedBox(
+              height: 44,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                children: servicePresets.map((p) => Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: AppPill(
+                    label: p.name,
+                    dotColor: widget.genreColors[p.genre],
+                    selected: _nameController.text == p.name,
+                    onTap: () => _applyPreset(p),
+                  ),
+                )).toList(),
+              ),
+            )),
           _section('サービス名', TextField(
             controller: _nameController, textInputAction: TextInputAction.next,
+            onChanged: (_) => setState(() {}),
             decoration: _fieldDecoration(hint: '例: Netflix', icon: Icons.sell_outlined),
           )),
           _section(_isYearly ? '年額' : '月額', Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -192,6 +221,14 @@ class _AddScreenState extends State<AddScreen> {
             label: g, dotColor: widget.genreColors[g], selected: _selectedGenre == g,
             onTap: () => setState(() => _selectedGenre = g),
           )).toList())),
+          _section('利用頻度（任意）', Row(children: [
+            for (final u in const [('often', 'よく使う'), ('sometimes', 'たまに'), ('rarely', 'ほぼ使わない')])
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                // もう一度押すと未設定に戻る
+                child: AppPill(label: u.$2, selected: _usage == u.$1, onTap: () => setState(() => _usage = _usage == u.$1 ? null : u.$1)),
+              ),
+          ])),
           _section('オプション', _buildSwitchCard()),
         ],
       ),
