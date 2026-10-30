@@ -46,6 +46,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   final GlobalKey _shotKey = GlobalKey(); // 全体撮影用(縦長)
   bool _capturing = false; // 撮影中だけ全件を裏で描画する
   int _touchedIndex = -1; // 分析グラフでタップ中のカテゴリ
+  int? _takeHome; // 手取り月収(任意。AI診断のプロンプトにだけ使う)
   ViewMode _viewMode = ViewMode.monthly; // 一番よく見る月額表示がデフォルト
   bool get _isYearlyView => _viewMode == ViewMode.yearly || _viewMode == ViewMode.yearlyOnly;
   final _formatter = NumberFormat('#,###');
@@ -91,6 +92,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     setState(() {
       _subs = List<Map<String, dynamic>>.from(json.decode(prefs.getString('subscription_list') ?? '[]'));
       // デフォルト値にも「クレカ」「AI」を反映
+      _takeHome = prefs.getInt('take_home');
       _genres = List<String>.from(json.decode(prefs.getString('genre_list') ?? json.encode(_defaultGenres)));
       _genreColors = Map<String, int>.from(json.decode(prefs.getString('genre_colors') ?? '{}'));
       // 既存の保存データにも新しいデフォルトカテゴリを1度だけ追加する(後で削除しても復活しない)
@@ -251,13 +253,55 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     }
   }
 
+  // --- 手取り月収(任意) ---
+  Future<void> _saveTakeHome(int? value) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (value == null) {
+      await prefs.remove('take_home');
+    } else {
+      await prefs.setInt('take_home', value);
+    }
+    if (mounted) setState(() => _takeHome = value);
+  }
+
+  void _editTakeHome() {
+    final controller = TextEditingController(text: _takeHome?.toString() ?? '');
+    void submit(BuildContext dialogContext) {
+      final v = int.tryParse(controller.text.replaceAll(',', '').trim());
+      _saveTakeHome(v != null && v > 0 ? v : null);
+      Navigator.pop(dialogContext);
+    }
+    showDialog(context: context, builder: (dialogContext) => AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      title: const Text('手取り月収', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18)),
+      content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+        TextField(
+          controller: controller, autofocus: true, keyboardType: TextInputType.number,
+          onSubmitted: (_) => submit(dialogContext),
+          style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
+          decoration: InputDecoration(
+            hintText: '例: 340000', suffixText: '円',
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
+          ),
+        ),
+        const SizedBox(height: 10),
+        Text('入力は任意です。AI診断のプロンプトにだけ使い、この端末の中にだけ保存します。', style: TextStyle(fontSize: 12, color: Theme.of(dialogContext).colorScheme.onSurfaceVariant)),
+      ]),
+      actions: [
+        if (_takeHome != null) TextButton(onPressed: () { _saveTakeHome(null); Navigator.pop(dialogContext); }, child: const Text('クリア')),
+        TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('キャンセル')),
+        FilledButton(onPressed: () => submit(dialogContext), child: const Text('保存')),
+      ],
+    ));
+  }
+
   // --- AI診断用プロンプト ---
   void _showDiagnosisPrompt() {
     if (_subs.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('サブスクを登録してから使ってください'), behavior: SnackBarBehavior.floating));
       return;
     }
-    final prompt = buildDiagnosisPrompt(subs: _subs, daysUntil: _calculateDaysUntil);
+    final prompt = buildDiagnosisPrompt(subs: _subs, daysUntil: _calculateDaysUntil, takeHome: _takeHome);
     showModalBottomSheet(
       context: context, isScrollControlled: true, useSafeArea: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
@@ -981,6 +1025,12 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             const Text('設定', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
             const SizedBox(height: 8),
             SwitchListTile(contentPadding: EdgeInsets.zero, title: const Text('ダークモード', style: TextStyle(fontWeight: FontWeight.w700)), secondary: const Icon(Icons.dark_mode_outlined), value: isDark, onChanged: (v) { MyApp.of(context)?.toggleDarkMode(v); Navigator.pop(context); }),
+            ListTile(
+              contentPadding: EdgeInsets.zero, leading: const Icon(Icons.account_balance_wallet_outlined),
+              title: const Text('手取り月収（任意）', style: TextStyle(fontWeight: FontWeight.w700)),
+              subtitle: Text(_takeHome == null ? '未設定・AI診断で収入に対する割合を見たいときに' : '${_formatter.format(_takeHome)}円'),
+              onTap: () { Navigator.pop(context); _editTakeHome(); },
+            ),
             ListTile(contentPadding: EdgeInsets.zero, leading: const Icon(Icons.auto_awesome_rounded), title: const Text('AIに診断してもらう（プロンプトをコピー）', style: TextStyle(fontWeight: FontWeight.w700)), onTap: () { Navigator.pop(context); _showDiagnosisPrompt(); }),
             ListTile(contentPadding: EdgeInsets.zero, leading: const Icon(Icons.download_rounded), title: const Text('CSVでエクスポート', style: TextStyle(fontWeight: FontWeight.w700)), onTap: () { _exportToCSV(); Navigator.pop(context); }),
             const Divider(),

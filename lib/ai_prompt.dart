@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 String buildDiagnosisPrompt({
   required List<Map<String, dynamic>> subs,
   required int Function(int? month, int day, bool isYearly) daysUntil,
+  int? takeHome, // 手取り月収(任意)
 }) {
   final yen = NumberFormat('#,###');
   String y(int v) => '${yen.format(v)}円';
@@ -48,6 +49,15 @@ String buildDiagnosisPrompt({
   }
 
   final stamp = DateFormat('yyyy/MM/dd').format(today);
+
+  // 手取り月収が入力されているときだけ、収入に対する割合を出す
+  final hasIncome = takeHome != null && takeHome > 0;
+  final incomeFact = hasIncome
+      ? '- 私の手取り月収は約${y(takeHome)}です。'
+      : '- 手取り月収は未入力です。収入に対する割合の評価は不要です。';
+  final incomeSummary = hasIncome
+      ? '\n- 手取り月収に対する割合: ${(monthlyTotal / takeHome * 100).toStringAsFixed(1)}%（これらを払った後の残り ${y(takeHome - monthlyTotal)}/月）'
+      : '';
   return '''あなたは家計とサブスクリプション管理に詳しいファイナンシャルアドバイザーです。
 以下は私が契約している定期支払い（サブスク）の一覧です。内容を診断して、無駄を減らすための具体的な提案をしてください。
 
@@ -56,11 +66,12 @@ String buildDiagnosisPrompt({
 - 年払いは12分割して月額換算しています。
 - 「解約検討中」は、私自身が見直したいと思っているものです。
 - 「合計外」は、集計から除外している項目です（参考情報）。
+$incomeFact
 
 【サマリー】
 - 月額換算の合計: ${y(monthlyTotal)}（年間 ${y(monthlyTotal * 12)}）
 - 内訳: 月払い ${y(monthlyBilled)}/月、年払い ${y(yearlyBilled)}/年
-- 契約数: ${subs.length}件（うち解約検討中の月額換算合計 ${y(reviewTotal)}）
+- 契約数: ${subs.length}件（うち解約検討中の月額換算合計 ${y(reviewTotal)}）$incomeSummary
 
 【カテゴリ別（月額換算）】
 ${genreLines.isEmpty ? '- （なし）' : genreLines}
