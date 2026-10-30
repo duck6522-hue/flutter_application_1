@@ -280,12 +280,12 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           onSubmitted: (_) => submit(dialogContext),
           style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
           decoration: InputDecoration(
-            hintText: '例: 340000', suffixText: '円',
+            hintText: '例: 300000', suffixText: '円',
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
           ),
         ),
         const SizedBox(height: 10),
-        Text('入力は任意です。AI診断のプロンプトにだけ使い、この端末の中にだけ保存します。', style: TextStyle(fontSize: 12, color: Theme.of(dialogContext).colorScheme.onSurfaceVariant)),
+        Text('毎月の振込額（ボーナスを除く）が目安です。入力は任意で、AI診断のプロンプトにだけ使い、この端末の中にだけ保存します。', style: TextStyle(fontSize: 12, color: Theme.of(dialogContext).colorScheme.onSurfaceVariant)),
       ]),
       actions: [
         if (_takeHome != null) TextButton(onPressed: () { _saveTakeHome(null); Navigator.pop(dialogContext); }, child: const Text('クリア')),
