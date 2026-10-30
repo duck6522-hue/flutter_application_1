@@ -735,43 +735,119 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         );
   }
 
-  Widget _analysisCard({required String title, required Widget child}) {
+  // 色相を少しずらした明るめの色(グラデーションの終点用)
+  Color _shiftColor(Color c, {double hue = 28, double light = 0.07}) {
+    final hsl = HSLColor.fromColor(c);
+    return hsl.withHue((hsl.hue + hue) % 360).withLightness((hsl.lightness + light).clamp(0.0, 0.8)).toColor();
+  }
+
+  LinearGradient _colorGradient(Color c) => LinearGradient(begin: Alignment.centerLeft, end: Alignment.centerRight, colors: [c, _shiftColor(c)]);
+
+  Widget _analysisCard({required String title, required Widget child, IconData? icon}) {
     final cs = Theme.of(context).colorScheme;
     return Card(
       margin: const EdgeInsets.fromLTRB(16, 6, 16, 10),
       child: Padding(
         padding: const EdgeInsets.all(18),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(title, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: cs.onSurfaceVariant)),
-          const SizedBox(height: 14),
+          Row(children: [
+            Container(
+              width: 30, height: 30,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [cs.primary, _headerEnd(cs)]),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon ?? Icons.insights_rounded, size: 17, color: Colors.white),
+            ),
+            const SizedBox(width: 10),
+            Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900)),
+          ]),
+          const SizedBox(height: 16),
           child,
         ]),
       ),
     );
   }
 
-  // 横棒1本分: 色マーク + 名前 + 棒 + 金額/割合
-  Widget _barRow({required String label, required Color color, required double ratio, required String amount, String? sub, bool active = true}) {
+  // 横棒1本分: 色マーク(または順位バッジ) + 名前 + グラデーションの棒 + 金額/割合
+  Widget _barRow({required String label, required Color color, required double ratio, required String amount, String? sub, bool active = true, int? rank}) {
     final cs = Theme.of(context).colorScheme;
     return Opacity(
       opacity: active ? 1 : 0.4,
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 7),
-        child: Column(children: [
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           Row(children: [
-            Container(width: 10, height: 10, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
-            const SizedBox(width: 8),
-            Expanded(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w700))),
+            if (rank != null)
+              Container(
+                width: 24, height: 24, alignment: Alignment.center,
+                decoration: BoxDecoration(shape: BoxShape.circle, gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [color, _shiftColor(color)])),
+                child: Text('$rank', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: _onColor(color))),
+              )
+            else
+              Container(width: 12, height: 12, decoration: BoxDecoration(gradient: _colorGradient(color), shape: BoxShape.circle)),
+            const SizedBox(width: 10),
+            Expanded(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w800))),
             Text(amount, style: const TextStyle(fontWeight: FontWeight.w900)),
             if (sub != null) SizedBox(width: 52, child: Text(sub, textAlign: TextAlign.right, style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant, fontWeight: FontWeight.bold))),
           ]),
-          const SizedBox(height: 6),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(6),
-            child: LinearProgressIndicator(value: ratio.clamp(0.0, 1.0), minHeight: 8, color: color, backgroundColor: cs.onSurface.withOpacity(0.08)),
+          const SizedBox(height: 8),
+          Container(
+            height: 12,
+            decoration: BoxDecoration(color: color.withOpacity(0.15), borderRadius: BorderRadius.circular(8)),
+            child: FractionallySizedBox(
+              alignment: Alignment.centerLeft,
+              widthFactor: ratio.clamp(0.02, 1.0),
+              child: Container(decoration: BoxDecoration(gradient: _colorGradient(color), borderRadius: BorderRadius.circular(8))),
+            ),
           ),
         ]),
       ),
+    );
+  }
+
+  // 分析タブの先頭: ヘッダーと同じグラデーションの合計カード + カテゴリ構成の積み上げバー
+  Widget _buildAnalysisHero(List<MapEntry<String, int>> entries, int total) {
+    final cs = Theme.of(context).colorScheme;
+    final on = cs.onPrimary;
+    final top = entries.first;
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 6, 16, 10),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [cs.primary, _headerEnd(cs)]),
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [BoxShadow(color: cs.primary.withOpacity(0.25), blurRadius: 16, offset: const Offset(0, 6))],
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(_modeTitle, style: TextStyle(color: on.withOpacity(0.85), fontWeight: FontWeight.w800)),
+            const SizedBox(height: 2),
+            FittedBox(fit: BoxFit.scaleDown, child: Text('${_formatter.format(total)} 円', style: TextStyle(fontSize: 34, color: on, fontWeight: FontWeight.w900, letterSpacing: -1))),
+          ])),
+          Icon(Icons.donut_large_rounded, color: on.withOpacity(0.35), size: 44),
+        ]),
+        const SizedBox(height: 4),
+        Text('最大は「${top.key}」 ${(top.value / total * 100).toStringAsFixed(0)}%・${entries.length}カテゴリ', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: on.withOpacity(0.85))),
+        const SizedBox(height: 14),
+        // カテゴリ構成の積み上げバー(色の間に2pxの隙間)
+        ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: SizedBox(
+            height: 14,
+            child: Row(children: [
+              for (var i = 0; i < entries.length; i++) ...[
+                if (i > 0) const SizedBox(width: 2),
+                Expanded(
+                  flex: (entries[i].value * 1000 ~/ total).clamp(1, 1000),
+                  child: Container(decoration: BoxDecoration(gradient: _colorGradient(_getGenreColor(entries[i].key)))),
+                ),
+              ],
+            ]),
+          ),
+        ),
+      ]),
     );
   }
 
@@ -834,14 +910,16 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     final unitLabel = _modeTitle;
 
     return [
+        _buildAnalysisHero(entries, total),
         _analysisCard(
+          icon: Icons.donut_large_rounded,
           title: 'カテゴリ別の割合',
           child: Column(children: [
             SizedBox(
               height: 240,
               child: Stack(alignment: Alignment.center, children: [
                 PieChart(PieChartData(
-                  startDegreeOffset: 270, sectionsSpace: 3, centerSpaceRadius: 82,
+                  startDegreeOffset: 270, sectionsSpace: 3, centerSpaceRadius: 74,
                   borderData: FlBorderData(show: false),
                   pieTouchData: PieTouchData(touchCallback: (event, resp) {
                     final i = resp?.touchedSection?.touchedSectionIndex ?? -1;
@@ -851,12 +929,16 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                       setState(() => _touchedIndex = i);
                     }
                   }),
-                  sections: List.generate(entries.length, (i) => PieChartSectionData(
-                    color: _getGenreColor(entries[i].key),
-                    value: entries[i].value.toDouble(),
-                    radius: _touchedIndex == i ? 36 : 28,
-                    showTitle: false,
-                  )),
+                  sections: List.generate(entries.length, (i) {
+                    final c = _getGenreColor(entries[i].key);
+                    return PieChartSectionData(
+                      color: c,
+                      gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [c, _shiftColor(c)]),
+                      value: entries[i].value.toDouble(),
+                      radius: _touchedIndex == i ? 44 : 36,
+                      showTitle: false,
+                    );
+                  }),
                 )),
                 // 中心: 合計 or タップ中カテゴリの詳細
                 Column(mainAxisSize: MainAxisSize.min, children: [
@@ -872,6 +954,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           ]),
         ),
         _analysisCard(
+          icon: Icons.leaderboard_rounded,
           title: 'カテゴリ別ランキング',
           child: Column(children: List.generate(entries.length, (i) {
             final e = entries[i];
@@ -887,14 +970,16 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           })),
         ),
         _analysisCard(
+          icon: Icons.local_fire_department_rounded,
           title: '高いサブスク TOP${topItems.length}',
           child: Column(children: [
-            for (final item in topItems)
+            for (var r = 0; r < topItems.length; r++)
               _barRow(
-                label: item['name'], color: _getGenreColor(item['genre']),
-                ratio: _displayPrice(item) / _displayPrice(topItems.first),
-                amount: '${_formatter.format(_displayPrice(item))}円',
-                sub: '${(_displayPrice(item) / total * 100).toStringAsFixed(0)}%',
+                rank: r + 1,
+                label: topItems[r]['name'], color: _getGenreColor(topItems[r]['genre']),
+                ratio: _displayPrice(topItems[r]) / _displayPrice(topItems.first),
+                amount: '${_formatter.format(_displayPrice(topItems[r]))}円',
+                sub: '${(_displayPrice(topItems[r]) / total * 100).toStringAsFixed(0)}%',
               ),
           ]),
         ),
