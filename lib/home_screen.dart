@@ -6,6 +6,8 @@ import 'dart:convert';
 import 'dart:html' as html;
 import 'dart:ui' as ui;
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
+import 'ai_prompt.dart';
 import 'add_screen.dart';
 import 'app_pill.dart';
 import 'main.dart';
@@ -247,6 +249,57 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     } finally {
       if (mounted) setState(() => _capturing = false);
     }
+  }
+
+  // --- AI診断用プロンプト ---
+  void _showDiagnosisPrompt() {
+    if (_subs.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('サブスクを登録してから使ってください'), behavior: SnackBarBehavior.floating));
+      return;
+    }
+    final prompt = buildDiagnosisPrompt(subs: _subs, daysUntil: _calculateDaysUntil);
+    showModalBottomSheet(
+      context: context, isScrollControlled: true, useSafeArea: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+      builder: (sheetContext) {
+        final cs = Theme.of(sheetContext).colorScheme;
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            _sheetHandle(),
+            const Text('AIに診断してもらう', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
+            const SizedBox(height: 4),
+            Text('コピーして、ChatGPT・Claude・Gemini などに貼り付けてください。', style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant)),
+            const SizedBox(height: 12),
+            Flexible(child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(color: cs.brightness == Brightness.dark ? cs.surfaceContainerHigh : Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: cs.outlineVariant)),
+              child: SingleChildScrollView(child: SelectableText(prompt, style: const TextStyle(fontSize: 12, height: 1.6))),
+            )),
+            const SizedBox(height: 10),
+            Row(children: [
+              Icon(Icons.info_outline_rounded, size: 14, color: cs.onSurfaceVariant),
+              const SizedBox(width: 6),
+              Expanded(child: Text('サービス名と金額がAIに送られます。気になる名前は貼り付ける前に消してください。', style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant))),
+            ]),
+            const SizedBox(height: 12),
+            SafeArea(top: false, child: FilledButton.icon(
+              onPressed: () async {
+                await Clipboard.setData(ClipboardData(text: prompt));
+                if (sheetContext.mounted) Navigator.pop(sheetContext);
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('コピーしました。AIに貼り付けてください'), behavior: SnackBarBehavior.floating));
+                }
+              },
+              icon: const Icon(Icons.copy_rounded),
+              label: const Text('プロンプトをコピー', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
+              style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
+            )),
+          ]),
+        );
+      },
+    );
   }
 
   // --- CSV出力 ---
@@ -675,7 +728,39 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     );
   }
 
-  Widget _buildAnalysisTab() => ListView(padding: const EdgeInsets.only(top: 10, bottom: 96), children: _analysisChildren());
+  Widget _buildAnalysisTab() => ListView(
+    padding: const EdgeInsets.only(top: 10, bottom: 96),
+    children: [..._analysisChildren(), _buildDiagnosisCard()],
+  );
+
+  // 分析タブの一番下: AI診断プロンプトへの入口(画像保存には含めない)
+  Widget _buildDiagnosisCard() {
+    final cs = Theme.of(context).colorScheme;
+    return Card(
+      margin: const EdgeInsets.fromLTRB(16, 6, 16, 10),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: _showDiagnosisPrompt,
+        child: Padding(
+          padding: const EdgeInsets.all(18),
+          child: Row(children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(color: cs.primary.withOpacity(0.12), borderRadius: BorderRadius.circular(14)),
+              child: Icon(Icons.auto_awesome_rounded, color: cs.primary),
+            ),
+            const SizedBox(width: 14),
+            const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('AIに診断してもらう', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900)),
+              SizedBox(height: 2),
+              Text('現状をまとめたプロンプトをコピー', style: TextStyle(fontSize: 12)),
+            ])),
+            Icon(Icons.chevron_right_rounded, color: cs.onSurfaceVariant),
+          ]),
+        ),
+      ),
+    );
+  }
 
   List<Widget> _analysisChildren() {
     final cs = Theme.of(context).colorScheme;
@@ -896,6 +981,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             const Text('設定', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
             const SizedBox(height: 8),
             SwitchListTile(contentPadding: EdgeInsets.zero, title: const Text('ダークモード', style: TextStyle(fontWeight: FontWeight.w700)), secondary: const Icon(Icons.dark_mode_outlined), value: isDark, onChanged: (v) { MyApp.of(context)?.toggleDarkMode(v); Navigator.pop(context); }),
+            ListTile(contentPadding: EdgeInsets.zero, leading: const Icon(Icons.auto_awesome_rounded), title: const Text('AIに診断してもらう（プロンプトをコピー）', style: TextStyle(fontWeight: FontWeight.w700)), onTap: () { Navigator.pop(context); _showDiagnosisPrompt(); }),
             ListTile(contentPadding: EdgeInsets.zero, leading: const Icon(Icons.download_rounded), title: const Text('CSVでエクスポート', style: TextStyle(fontWeight: FontWeight.w700)), onTap: () { _exportToCSV(); Navigator.pop(context); }),
             const Divider(),
             const SizedBox(height: 8),
