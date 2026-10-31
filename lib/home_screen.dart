@@ -8,6 +8,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'ai_prompt.dart';
+import 'csv_io.dart';
 import 'add_screen.dart';
 import 'app_pill.dart';
 import 'main.dart';
@@ -348,15 +349,99 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
   // --- CSV出力 ---
   void _exportToCSV() {
-    String csv = '\uFEFF名前,金額,サイクル,更新月,更新日,ジャンル,計上,検討中\n';
-    for (var sub in _subs) {
-      csv += '${sub['name']},${sub['price']},${sub['isYearly'] ? "年" : "月"},${sub['month'] ?? ""},${sub['day']},${sub['genre']},${sub['includeInMonthly'] ? "込" : "外"},${sub['isReviewing'] ? "検討中" : ""}\n';
-    }
-    final bytes = utf8.encode(csv);
+    final bytes = utf8.encode(buildCsv(_subs, _genreColors));
     final blob = html.Blob([bytes], 'text/csv');
     final url = html.Url.createObjectUrlFromBlob(blob);
-    html.AnchorElement(href: url)..setAttribute("download", "subsc_data.csv")..click();
+    final stamp = DateFormat('yyyyMMdd').format(DateTime.now());
+    html.AnchorElement(href: url)..setAttribute("download", "subsc_data_$stamp.csv")..click();
     html.Url.revokeObjectUrl(url);
+  }
+
+  // --- CSVから読み込み(引き継ぎ) ---
+  // ファイル選択はタップの操作の中で開く必要があるため、設定シートを閉じた直後に呼ぶ
+  void _importCsv() {
+    final input = html.FileUploadInputElement()..accept = '.csv,text/csv';
+    input.onChange.listen((_) {
+      final file = input.files?.isNotEmpty == true ? input.files!.first : null;
+      if (file == null) return;
+      _readCsvFile(file, 'utf-8', (text) {
+        // Excelで保存したShift_JISのCSVは文字化けするので、その場合は読み直す
+        if (text.contains('\uFFFD')) {
+          _readCsvFile(file, 'shift_jis', _confirmImport);
+        } else {
+          _confirmImport(text);
+        }
+      });
+    });
+    input.click();
+  }
+
+  void _readCsvFile(html.File file, String encoding, void Function(String) onDone) {
+    final reader = html.FileReader();
+    reader.onLoadEnd.listen((_) => onDone(reader.result as String? ?? ''));
+    reader.readAsText(file, encoding);
+  }
+
+  String _dupKey(Map<String, dynamic> i) => '${i['name']}|${i['price']}|${i['isYearly'] ?? false}|${i['day']}|${i['genre']}';
+
+  void _confirmImport(String text) {
+    if (!mounted) return;
+    final result = parseCsv(text);
+    if (result.items.isEmpty) {
+      showDialog(context: context, builder: (c) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: const Text('読み込めませんでした', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18)),
+        content: Text(result.errors.take(4).join('\n')),
+        actions: [TextButton(onPressed: () => Navigator.pop(c), child: const Text('閉じる'))],
+      ));
+      return;
+    }
+    final existing = _subs.map(_dupKey).toSet();
+    final newItems = result.items.where((i) => !existing.contains(_dupKey(i))).toList();
+    showDialog(context: context, builder: (c) {
+      final cs = Theme.of(c).colorScheme;
+      return AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: const Text('CSVを読み込む', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18)),
+        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('${result.items.length}件を読み込めます${result.errors.isEmpty ? '' : '（${result.errors.length}件は読み込めません）'}', style: const TextStyle(fontWeight: FontWeight.w800)),
+          const SizedBox(height: 10),
+          Text('・追加: 今のデータに足します（同じ内容は${result.items.length - newItems.length}件スキップ）\n・置き換え: 今の${_subs.length}件を消して、CSVの内容にします', style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant, height: 1.6)),
+          if (result.errors.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(result.errors.take(3).join('\n') + (result.errors.length > 3 ? '\n…ほか${result.errors.length - 3}件' : ''), style: TextStyle(fontSize: 12, color: cs.error)),
+          ],
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c), child: const Text('キャンセル')),
+          TextButton(onPressed: () { Navigator.pop(c); _applyImport(result, replace: false); }, child: const Text('追加')),
+          FilledButton(onPressed: () { Navigator.pop(c); _applyImport(result, replace: true); }, child: const Text('置き換え')),
+        ],
+      );
+    });
+  }
+
+  void _applyImport(CsvImport result, {required bool replace}) {
+    setState(() {
+      final existing = replace ? <String>{} : _subs.map(_dupKey).toSet();
+      if (replace) _subs = [];
+      for (final item in result.items) {
+        if (existing.add(_dupKey(item))) _subs.add(item);
+      }
+      // CSVにあって、まだ無いジャンルは足す(「その他」は最後のまま)。色も引き継ぐ
+      for (final item in result.items) {
+        final g = item['genre'] as String;
+        if (!_genres.contains(g)) _genres.add(g);
+      }
+      result.genreColors.forEach((g, c) => _genreColors.putIfAbsent(g, () => c));
+      _keepOtherLast();
+      _sortList();
+    });
+    _saveAllData();
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(replace ? 'CSVの内容に置き換えました（${_subs.length}件）' : 'CSVから追加しました（合計${_subs.length}件）'),
+      behavior: SnackBarBehavior.floating,
+    ));
   }
 
   // --- UI構成 ---
@@ -1120,7 +1205,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               onTap: () { Navigator.pop(context); _editTakeHome(); },
             ),
             ListTile(contentPadding: EdgeInsets.zero, leading: const Icon(Icons.auto_awesome_rounded), title: const Text('AIに診断してもらう（プロンプトをコピー）', style: TextStyle(fontWeight: FontWeight.w700)), onTap: () { Navigator.pop(context); _showDiagnosisPrompt(); }),
-            ListTile(contentPadding: EdgeInsets.zero, leading: const Icon(Icons.download_rounded), title: const Text('CSVでエクスポート', style: TextStyle(fontWeight: FontWeight.w700)), onTap: () { _exportToCSV(); Navigator.pop(context); }),
+            ListTile(contentPadding: EdgeInsets.zero, leading: const Icon(Icons.download_rounded), title: const Text('CSVで書き出す（引き継ぎ用）', style: TextStyle(fontWeight: FontWeight.w700)), onTap: () { _exportToCSV(); Navigator.pop(context); }),
+            ListTile(contentPadding: EdgeInsets.zero, leading: const Icon(Icons.upload_rounded), title: const Text('CSVから読み込む（引き継ぎ）', style: TextStyle(fontWeight: FontWeight.w700)), subtitle: const Text('書き出したCSVでデータを戻せます'), onTap: () { Navigator.pop(context); _importCsv(); }),
             const Divider(),
             const SizedBox(height: 8),
             Text('ビビッドグラデーション', style: TextStyle(fontWeight: FontWeight.w800, color: cs.onSurfaceVariant)),
