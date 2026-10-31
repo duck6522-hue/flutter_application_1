@@ -9,6 +9,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'ai_prompt.dart';
 import 'csv_io.dart';
+import 'date_calc.dart';
 import 'add_screen.dart';
 import 'app_pill.dart';
 import 'main.dart';
@@ -143,19 +144,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   Color _onColor(Color c) =>
       ThemeData.estimateBrightnessForColor(c) == Brightness.dark ? Colors.white : Colors.black87;
 
-  int _calculateDaysUntil(int? month, int day, bool isYearly) {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    DateTime nextDate;
-    if (isYearly && month != null) {
-      nextDate = DateTime(now.year, month, day);
-      if (nextDate.isBefore(today)) nextDate = DateTime(now.year + 1, month, day);
-    } else {
-      nextDate = DateTime(now.year, now.month, day);
-      if (nextDate.isBefore(today)) nextDate = DateTime(now.year, now.month + 1, day);
-    }
-    return nextDate.difference(today).inDays;
-  }
+  int _calculateDaysUntil(int? month, int day, bool isYearly) => daysUntilNext(DateTime.now(), month, day, isYearly);
 
   // 表示モードごとに、どのサブスクを対象にするか
   //  月額: 月払い + 「月額にも含める」をオンにした年払い / 年額: 全部
