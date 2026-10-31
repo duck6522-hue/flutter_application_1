@@ -35,7 +35,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
   // 色を選んでいないデフォルトカテゴリには、並び順に沿って 青緑→空色→青→紫→ピンク のグラデーションを付ける。
   // 金額の大きい固定費(家賃・ローン・保険…)が同じ青に固まらないよう、前半は色相の間隔を広げてある。
-  static const List<double> _defaultHues = [175, 197, 219, 241, 258, 275, 287, 299, 311, 323, 335];
+  // 家賃は一番大きくなりやすいので、ミントではなく鮮やかなシアンから始める。
+  static const List<double> _defaultHues = [190, 213, 234, 252, 267, 280, 291, 302, 313, 324, 335];
   static final Map<String, Color> _defaultGenreColors = () {
     final names = _defaultGenres.where((g) => g != 'その他').toList();
     return {
@@ -46,8 +47,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   // 色相から、見た目の明るさがそろうように明るさを補正した鮮やかな色を作る(青は暗く見えるので明るめ、青緑は明るく見えるので控えめ)
   static Color _vividColor(double hue) {
     double bump(double center, double width) => math.exp(-math.pow((hue - center) / width, 2));
-    final l = 0.5 + 0.10 * bump(240, 28) - 0.05 * bump(185, 20);
-    return HSLColor.fromAHSL(1, hue, 0.88, l).toColor();
+    final l = 0.5 + 0.07 * bump(240, 28) - 0.04 * bump(185, 20);
+    return HSLColor.fromAHSL(1, hue, 0.95, l).toColor();
   }
   Map<String, int> _genreColors = {};
   String _searchQuery = '';
