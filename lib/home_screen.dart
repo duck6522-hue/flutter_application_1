@@ -3,12 +3,14 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
 import 'dart:convert';
+import 'dart:math' as math;
 import 'dart:html' as html;
 import 'dart:ui' as ui;
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'ai_prompt.dart';
 import 'csv_io.dart';
+import 'date_calc.dart';
 import 'add_screen.dart';
 import 'app_pill.dart';
 import 'main.dart';
@@ -31,14 +33,22 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   static const List<String> _defaultGenres = ['家賃', 'ローン', '保険', '携帯代', 'クレカ', '動画', '音楽', 'ゲーム', 'AI', '家計管理', '副業', 'その他'];
   List<String> _genres = List<String>.from(_defaultGenres);
 
-  // 色を選んでいないデフォルトカテゴリには、並び順に沿って青→紫→ピンクのグラデーションを付ける
+  // 色を選んでいないデフォルトカテゴリには、並び順に沿って 青緑→空色→青→紫→ピンク のグラデーションを付ける。
+  // 金額の大きい固定費(家賃・ローン・保険…)が同じ青に固まらないよう、前半は色相の間隔を広げてある。
+  static const List<double> _defaultHues = [175, 197, 219, 241, 258, 275, 287, 299, 311, 323, 335];
   static final Map<String, Color> _defaultGenreColors = () {
     final names = _defaultGenres.where((g) => g != 'その他').toList();
     return {
-      for (var i = 0; i < names.length; i++)
-        names[i]: HSLColor.fromAHSL(1, 215 + i * (335 - 215) / (names.length - 1), 0.85, 0.52).toColor(),
+      for (var i = 0; i < names.length; i++) names[i]: _vividColor(_defaultHues[i]),
     };
   }();
+
+  // 色相から、見た目の明るさがそろうように明るさを補正した鮮やかな色を作る(青は暗く見えるので明るめ、青緑は明るく見えるので控えめ)
+  static Color _vividColor(double hue) {
+    double bump(double center, double width) => math.exp(-math.pow((hue - center) / width, 2));
+    final l = 0.5 + 0.10 * bump(240, 28) - 0.05 * bump(185, 20);
+    return HSLColor.fromAHSL(1, hue, 0.88, l).toColor();
+  }
   Map<String, int> _genreColors = {};
   String _searchQuery = '';
   String _sortBy = 'price'; // 金額が高い順がデフォルト
@@ -136,26 +146,14 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     final base = _genreColors.containsKey(genre) ? Color(_genreColors[genre]!) : (_defaultGenreColors[genre] ?? Colors.grey.shade500);
     final dark = Theme.of(context).brightness == Brightness.dark;
     final hsl = HSLColor.fromColor(base);
-    final l = dark ? hsl.lightness.clamp(0.55, 0.85) : hsl.lightness.clamp(0.28, 0.52);
+    final l = dark ? hsl.lightness.clamp(0.55, 0.85) : hsl.lightness.clamp(0.28, 0.60);
     return hsl.withLightness(l.toDouble()).toColor();
   }
 
   Color _onColor(Color c) =>
       ThemeData.estimateBrightnessForColor(c) == Brightness.dark ? Colors.white : Colors.black87;
 
-  int _calculateDaysUntil(int? month, int day, bool isYearly) {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    DateTime nextDate;
-    if (isYearly && month != null) {
-      nextDate = DateTime(now.year, month, day);
-      if (nextDate.isBefore(today)) nextDate = DateTime(now.year + 1, month, day);
-    } else {
-      nextDate = DateTime(now.year, now.month, day);
-      if (nextDate.isBefore(today)) nextDate = DateTime(now.year, now.month + 1, day);
-    }
-    return nextDate.difference(today).inDays;
-  }
+  int _calculateDaysUntil(int? month, int day, bool isYearly) => daysUntilNext(DateTime.now(), month, day, isYearly);
 
   // 表示モードごとに、どのサブスクを対象にするか
   //  月額: 月払い + 「月額にも含める」をオンにした年払い / 年額: 全部
