@@ -142,13 +142,20 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   }
 
   // --- 便利計算 ---
-  // どの背景でも見えるように、明るさを範囲内に収める(黒や薄い黄色対策)
-  Color _getGenreColor(String genre) {
-    final base = _genreColors.containsKey(genre) ? Color(_genreColors[genre]!) : (_defaultGenreColors[genre] ?? Colors.grey.shade500);
+  // 選ばれた色を、色相は保ったまま、鮮やかさと明るさをそろえて表示する。
+  // パステルや暗い色を選んでも、くすまず、どの背景でも見える。黒・グレーはそのまま(明るさだけ整える)。
+  Color _displayColor(Color base) {
     final dark = Theme.of(context).brightness == Brightness.dark;
     final hsl = HSLColor.fromColor(base);
-    final l = dark ? hsl.lightness.clamp(0.55, 0.85) : hsl.lightness.clamp(0.28, 0.60);
-    return hsl.withLightness(l.toDouble()).toColor();
+    final neutral = hsl.saturation < 0.12;
+    final sat = neutral ? hsl.saturation : math.max(hsl.saturation, 0.8);
+    final l = dark ? hsl.lightness.clamp(0.58, 0.80) : hsl.lightness.clamp(0.38, 0.58);
+    return hsl.withSaturation(sat).withLightness(l.toDouble()).toColor();
+  }
+
+  Color _getGenreColor(String genre) {
+    final base = _genreColors.containsKey(genre) ? Color(_genreColors[genre]!) : (_defaultGenreColors[genre] ?? Colors.grey.shade500);
+    return _displayColor(base);
   }
 
   Color _onColor(Color c) =>
@@ -915,20 +922,28 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         const SizedBox(height: 4),
         Text('最大は「${top.key}」 ${(top.value / total * 100).toStringAsFixed(0)}%・${entries.length}カテゴリ', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: on.withOpacity(0.85))),
         const SizedBox(height: 14),
-        // カテゴリ構成の積み上げバー(色の間に2pxの隙間)
-        ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: SizedBox(
-            height: 14,
-            child: Row(children: [
-              for (var i = 0; i < entries.length; i++) ...[
-                if (i > 0) const SizedBox(width: 2),
-                Expanded(
-                  flex: (entries[i].value * 1000 ~/ total).clamp(1, 1000),
-                  child: Container(decoration: BoxDecoration(gradient: _colorGradient(_getGenreColor(entries[i].key)))),
-                ),
-              ],
-            ]),
+        // カテゴリ構成の積み上げバー(色の間に2pxの隙間)。背景のグラデーションとなじまないよう、うすい白の枠で囲む
+        Container(
+          padding: const EdgeInsets.all(3),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.22),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.white.withOpacity(0.8), width: 1.5),
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: SizedBox(
+              height: 12,
+              child: Row(children: [
+                for (var i = 0; i < entries.length; i++) ...[
+                  if (i > 0) const SizedBox(width: 2),
+                  Expanded(
+                    flex: (entries[i].value * 1000 ~/ total).clamp(1, 1000),
+                    child: Container(decoration: BoxDecoration(gradient: _colorGradient(_getGenreColor(entries[i].key)))),
+                  ),
+                ],
+              ]),
+            ),
           ),
         ),
       ]),
@@ -1021,6 +1036,11 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                       value: entries[i].value.toDouble(),
                       radius: _touchedIndex == i ? 44 : 36,
                       showTitle: false,
+                      // 隣の色となじまないよう、うすく縁取る(ダークは控えめに)
+                      // 小さい区画(3%未満)は、縁で色が隠れるので縁取りしない
+                      borderSide: entries[i].value / total < 0.03
+                          ? BorderSide.none
+                          : BorderSide(color: Colors.white.withOpacity(Theme.of(context).brightness == Brightness.dark ? 0.35 : 0.9), width: 2),
                     );
                   }),
                 )),
@@ -1172,10 +1192,10 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             child: Container(
               width: 44, height: 44,
               decoration: BoxDecoration(
-                color: c, shape: BoxShape.circle,
+                color: _displayColor(c), shape: BoxShape.circle,
                 border: Border.all(color: selected ? Theme.of(context).colorScheme.onSurface : Theme.of(context).colorScheme.outlineVariant, width: selected ? 3 : 1),
               ),
-              child: selected ? Icon(Icons.check_rounded, color: _onColor(c)) : null,
+              child: selected ? Icon(Icons.check_rounded, color: _onColor(_displayColor(c))) : null,
             ),
           );
         }).toList()),
