@@ -16,6 +16,7 @@ class AddScreen extends StatefulWidget {
 class _AddScreenState extends State<AddScreen> {
   final _nameController = TextEditingController();
   final _priceController = TextEditingController();
+  final _memoController = TextEditingController(); // メモ(任意): 解約条件など
   final _formatter = NumberFormat('#,###');
   int _selectedMonth = 1;
   int _selectedDay = 1;
@@ -40,6 +41,7 @@ class _AddScreenState extends State<AddScreen> {
       _includeInMonthly = widget.editData!['includeInMonthly'] ?? true;
       _isReviewing = widget.editData!['isReviewing'] ?? false;
       _usage = widget.editData!['usage'];
+      _memoController.text = widget.editData!['memo'] ?? '';
       _showInMonthly = widget.editData!['showInMonthly'] ?? false;
     }
   }
@@ -48,6 +50,7 @@ class _AddScreenState extends State<AddScreen> {
   void dispose() {
     _nameController.dispose();
     _priceController.dispose();
+    _memoController.dispose();
     super.dispose();
   }
 
@@ -57,6 +60,21 @@ class _AddScreenState extends State<AddScreen> {
       _nameController.text = p.name;
       if (widget.genres.contains(p.genre)) _selectedGenre = p.genre;
     });
+  }
+
+  void _confirmDelete() {
+    showDialog(context: context, builder: (c) => AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      title: const Text('削除しますか？', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18)),
+      content: Text('「${widget.editData!['name']}」を削除します。'),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(c), child: const Text('キャンセル')),
+        TextButton(
+          onPressed: () { Navigator.pop(c); Navigator.pop(context, {'_delete': true}); },
+          child: const Text('削除', style: TextStyle(color: Colors.red)),
+        ),
+      ],
+    ));
   }
 
   int? get _price => int.tryParse(_priceController.text.trim());
@@ -76,6 +94,7 @@ class _AddScreenState extends State<AddScreen> {
       'month': _selectedMonth, 'day': _selectedDay, 'genre': _selectedGenre,
       'isYearly': _isYearly, 'includeInMonthly': _includeInMonthly, 'isReviewing': _isReviewing, 'showInMonthly': _showInMonthly,
       'usage': _usage,
+      'memo': _memoController.text.trim().isEmpty ? null : _memoController.text.trim(),
     });
   }
 
@@ -157,7 +176,13 @@ class _AddScreenState extends State<AddScreen> {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(title: Text(widget.editData == null ? 'サブスクを追加' : 'サブスクを編集', style: const TextStyle(fontWeight: FontWeight.w900))),
+      appBar: AppBar(
+        title: Text(widget.editData == null ? 'サブスクを追加' : 'サブスクを編集', style: const TextStyle(fontWeight: FontWeight.w900)),
+        actions: [
+          if (widget.editData != null)
+            IconButton(tooltip: '削除', icon: Icon(Icons.delete_outline_rounded, color: Theme.of(context).colorScheme.error), onPressed: _confirmDelete),
+        ],
+      ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
         children: [
@@ -229,6 +254,10 @@ class _AddScreenState extends State<AddScreen> {
                 child: AppPill(label: u.$2, selected: _usage == u.$1, onTap: () => setState(() => _usage = _usage == u.$1 ? null : u.$1)),
               ),
           ])),
+          _section('メモ（任意）', TextField(
+            controller: _memoController, maxLength: 60,
+            decoration: _fieldDecoration(hint: '例: 2年契約・解約は更新月のみ', icon: Icons.sticky_note_2_outlined).copyWith(counterText: ''),
+          )),
           _section('オプション', _buildSwitchCard()),
         ],
       ),

@@ -98,6 +98,11 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     super.dispose();
   }
 
+  Future<void> _savePref(String key, String value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(key, value);
+  }
+
   // --- データ保存・読込 ---
   Future<void> _loadAllData() async {
     final prefs = await SharedPreferences.getInstance();
@@ -105,6 +110,10 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       _subs = List<Map<String, dynamic>>.from(json.decode(prefs.getString('subscription_list') ?? '[]'));
       // デフォルト値にも「クレカ」「AI」を反映
       _takeHome = prefs.getInt('take_home');
+      // 前回の表示モードと並び順を引き継ぐ
+      final savedMode = prefs.getString('view_mode');
+      _viewMode = ViewMode.values.firstWhere((m) => m.name == savedMode, orElse: () => ViewMode.monthly);
+      if (prefs.getString('sort_by') == 'date') _sortBy = 'date';
       _genres = List<String>.from(json.decode(prefs.getString('genre_list') ?? json.encode(_defaultGenres)));
       _genreColors = Map<String, int>.from(json.decode(prefs.getString('genre_colors') ?? '{}'));
       // 既存の保存データにも新しいデフォルトカテゴリを1度だけ追加する(後で削除しても復活しない)
@@ -619,7 +628,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             ButtonSegment(value: ViewMode.yearlyOnly, label: Text('年払いのみ', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800))),
           ],
           selected: <ViewMode>{_viewMode},
-          onSelectionChanged: (set) => setState(() => _viewMode = set.first),
+          onSelectionChanged: (set) { setState(() => _viewMode = set.first); _savePref('view_mode', set.first.name); },
         ),
       ),
     );
@@ -675,7 +684,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               DropdownMenuItem(value: 'date', child: Text('支払日が近い順')),
               DropdownMenuItem(value: 'price', child: Text('金額が高い順')),
             ],
-            onChanged: (v) { if (v != null) { _sortBy = v; _sortList(); } },
+            onChanged: (v) { if (v != null) { _sortBy = v; _sortList(); _savePref('sort_by', v); } },
           ),
         ]),
       ),
@@ -756,11 +765,102 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     ];
   }
 
+  // 7日以内に支払いが来るもの(近い順)。請求される実額で出す
+  Widget _buildUpcoming() {
+    final cs = Theme.of(context).colorScheme;
+    final soon = _subs
+        .map((i) => (item: i, days: _calculateDaysUntil(i['month'], i['day'], i['isYearly'] ?? false)))
+        .where((e) => e.days <= 7)
+        .toList()
+      ..sort((a, b) => a.days.compareTo(b.days));
+    if (soon.isEmpty) return const SizedBox.shrink();
+    final total = soon.fold<int>(0, (sum, e) => sum + (e.item['price'] as int));
+    final shown = soon.take(3).toList();
+    return Card(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Icon(Icons.notifications_active_rounded, size: 18, color: cs.primary),
+            const SizedBox(width: 8),
+            const Text('7日以内の支払い', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900)),
+            const SizedBox(width: 8),
+            Text('${soon.length}件', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: cs.onSurfaceVariant)),
+            const Spacer(),
+            Text('計 ${_formatter.format(total)}円', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900)),
+          ]),
+          const SizedBox(height: 6),
+          for (final e in shown)
+            InkWell(
+              borderRadius: BorderRadius.circular(10),
+              onTap: () => _openAddScreen(index: _subs.indexOf(e.item)),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Row(children: [
+                  Container(width: 10, height: 10, decoration: BoxDecoration(color: _getGenreColor(e.item['genre']), shape: BoxShape.circle)),
+                  const SizedBox(width: 10),
+                  Expanded(child: Text(e.item['name'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w700))),
+                  _buildDaysBadge(e.days),
+                  const SizedBox(width: 10),
+                  SizedBox(width: 84, child: Text('${_formatter.format(e.item['price'])}円', textAlign: TextAlign.right, style: const TextStyle(fontWeight: FontWeight.w900))),
+                ]),
+              ),
+            ),
+          if (soon.length > shown.length)
+            Padding(
+              padding: const EdgeInsets.only(top: 2, bottom: 4),
+              child: Text('ほか${soon.length - shown.length}件', style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant)),
+            ),
+        ]),
+      ),
+    );
+  }
+
+  // まだ1件も登録していないときの案内
+  Widget _buildWelcome() {
+    final cs = Theme.of(context).colorScheme;
+    return Card(
+      margin: const EdgeInsets.fromLTRB(16, 20, 16, 8),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(children: [
+          Container(
+            width: 64, height: 64,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [cs.primary, _headerEnd(cs)]),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: const Icon(Icons.autorenew_rounded, color: Colors.white, size: 34),
+          ),
+          const SizedBox(height: 14),
+          const Text('最初のサブスクを登録しましょう', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900)),
+          const SizedBox(height: 6),
+          Text('毎月・毎年の支払いをまとめると、合計と次の支払日がひと目で分かります。', textAlign: TextAlign.center, style: TextStyle(fontSize: 13, height: 1.6, color: cs.onSurfaceVariant)),
+          const SizedBox(height: 18),
+          FilledButton.icon(
+            onPressed: () => _openAddScreen(),
+            icon: const Icon(Icons.add),
+            label: const Text('サブスクを追加', style: TextStyle(fontWeight: FontWeight.w900)),
+            style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(50), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
+          ),
+          const SizedBox(height: 6),
+          TextButton.icon(onPressed: _importCsv, icon: const Icon(Icons.upload_rounded, size: 18), label: const Text('CSVから引き継ぐ')),
+        ]),
+      ),
+    );
+  }
+
   Widget _buildListView(List<Map<String, dynamic>> list) {
+    // 1件も無いときは、検索や絞り込みは出さずに案内だけ見せる
+    if (_subs.isEmpty) {
+      return ListView(padding: const EdgeInsets.only(bottom: 96), children: [_buildSummaryHeader(), _buildWelcome()]);
+    }
     return ListView(
       padding: const EdgeInsets.only(bottom: 96), // FABと重ならない余白
       children: [
         _buildSummaryHeader(),
+        _buildUpcoming(),
         _buildToggleSwitch(),
         _buildSearchField(),
         _buildFilterBar(),
@@ -808,6 +908,14 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                         if (reviewing) _buildTag('検討中', Colors.orange, icon: Icons.warning_amber_rounded),
                         if (!include) _buildTag('合計外', Colors.grey),
                       ]),
+                      if ((item['memo'] ?? '').toString().isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        Row(children: [
+                          Icon(Icons.sticky_note_2_outlined, size: 13, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                          const SizedBox(width: 4),
+                          Expanded(child: Text(item['memo'], maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant))),
+                        ]),
+                      ],
                     ])),
                     const SizedBox(width: 8),
                     Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.end, children: [
@@ -1272,15 +1380,52 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   }
 
   void _deleteSub(int i) {
+    if (i < 0 || i >= _subs.length) return;
+    final name = _subs[i]['name'];
     showDialog(context: context, builder: (context) => AlertDialog(
-      title: const Text('削除確認'), content: const Text('このサブスクを削除しますか？'),
-      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('キャンセル')),
-      TextButton(onPressed: () async { setState(() => _subs.removeAt(i)); await _saveAllData(); Navigator.pop(context); }, child: const Text('削除', style: TextStyle(color: Colors.red)))],
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      title: const Text('削除しますか？', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18)),
+      content: Text('「$name」を削除します。'),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('キャンセル')),
+        TextButton(onPressed: () { Navigator.pop(context); _removeSub(i); }, child: const Text('削除', style: TextStyle(color: Colors.red))),
+      ],
     ));
   }
 
+  // 削除して、しばらく「元に戻す」を出す
+  void _removeSub(int i) {
+    if (i < 0 || i >= _subs.length) return;
+    final removed = _subs[i];
+    setState(() => _subs.removeAt(i));
+    _saveAllData();
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(SnackBar(
+        content: Text('「${removed['name']}」を削除しました'),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 6),
+        action: SnackBarAction(label: '元に戻す', onPressed: () {
+          setState(() { _subs.add(removed); _sortList(); });
+          _saveAllData();
+        }),
+      ));
+  }
+
   Future<void> _openAddScreen({int? index}) async {
-    final result = await Navigator.push(context, MaterialPageRoute(builder: (context) => AddScreen(editData: index != null ? _subs[index] : null, genres: _genres, genreColors: {for (final g in _genres) g: _getGenreColor(g)})));
-    if (result != null) { setState(() { if (index != null) _subs[index] = result; else _subs.add(result); _sortList(); }); _saveAllData(); }
+    final editing = index != null ? _subs[index] : null;
+    final result = await Navigator.push(context, MaterialPageRoute(builder: (context) => AddScreen(editData: editing, genres: _genres, genreColors: {for (final g in _genres) g: _getGenreColor(g)})));
+    if (result == null || !mounted) return;
+    if (result is Map && result['_delete'] == true) {
+      // 編集画面の削除ボタン(確認は編集画面で済んでいる)
+      if (editing != null) _removeSub(_subs.indexOf(editing));
+      return;
+    }
+    setState(() {
+      final i = editing == null ? -1 : _subs.indexOf(editing);
+      if (i >= 0) { _subs[i] = result; } else { _subs.add(result); }
+      _sortList();
+    });
+    _saveAllData();
   }
 }

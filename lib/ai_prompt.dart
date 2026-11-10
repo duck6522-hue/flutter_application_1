@@ -47,11 +47,12 @@ String buildDiagnosisPrompt({
       'rarely' => 'ほぼ使わない',
       _ => null,
     };
+    final memo = (i['memo'] ?? '').toString().replaceAll('\n', ' ');
     final flags = [
       if (reviewing(i)) '解約検討中',
       if (!counted(i)) '合計外',
     ];
-    lines.add('${n + 1}. ${i['name']} | $price | カテゴリ: ${i['genre']} | 次回支払い: ${next.month}/${next.day}（あと$days日）${usage == null ? '' : ' | 利用頻度: $usage'}${flags.isEmpty ? '' : ' | ${flags.join('・')}'}');
+    lines.add('${n + 1}. ${i['name']} | $price | カテゴリ: ${i['genre']} | 次回支払い: ${next.month}/${next.day}（あと$days日）${usage == null ? '' : ' | 利用頻度: $usage'}${memo.isEmpty ? '' : ' | メモ: $memo'}${flags.isEmpty ? '' : ' | ${flags.join('・')}'}');
   }
 
   final stamp = DateFormat('yyyy/MM/dd').format(today);
@@ -73,6 +74,7 @@ String buildDiagnosisPrompt({
 - 「解約検討中」は、私自身が見直したいと思っているものです。
 - 「合計外」は、集計から除外している項目です（参考情報）。
 - 「利用頻度」は私の自己申告です。記載がないものは未入力で、判断材料にしないでください。
+- 「メモ」は契約条件などの私の覚え書きです。
 $incomeFact
 
 【サマリー】
