@@ -58,6 +58,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   final GlobalKey _shotKey = GlobalKey(); // 全体撮影用(縦長)
   bool _capturing = false; // 撮影中だけ全件を裏で描画する
   int _touchedIndex = -1; // 分析グラフでタップ中のカテゴリ
+  bool _analysisThemed = true; // 分析タブをテーマ色の同系統グラデーションでそろえる(false: カテゴリの色)
   int? _takeHome; // 手取り月収(任意。AI診断のプロンプトにだけ使う)
   ViewMode _viewMode = ViewMode.monthly; // 一番よく見る月額表示がデフォルト
   bool get _isYearlyView => _viewMode == ViewMode.yearly || _viewMode == ViewMode.yearlyOnly;
@@ -111,6 +112,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       // デフォルト値にも「クレカ」「AI」を反映
       _takeHome = prefs.getInt('take_home');
       // 前回の表示モードと並び順を引き継ぐ
+      _analysisThemed = prefs.getString('analysis_colors') != 'genre';
       final savedMode = prefs.getString('view_mode');
       _viewMode = ViewMode.values.firstWhere((m) => m.name == savedMode, orElse: () => ViewMode.monthly);
       if (prefs.getString('sort_by') == 'date') _sortBy = 'date';
@@ -507,6 +509,21 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           icon: const Icon(Icons.add),
         ),
     );
+  }
+
+  // 分析タブ用: 順位に応じた、テーマ色の同系統グラデーション(金額が大きいほど濃く鮮やか)。
+  // テーマ色からヘッダーの終点の色へ色相を動かしつつ、明るさも段階的に変えて見分けやすくする。
+  Color _rankColor(int rank, int count) {
+    final cs = Theme.of(context).colorScheme;
+    final dark = cs.brightness == Brightness.dark;
+    final a = HSLColor.fromColor(cs.primary), b = HSLColor.fromColor(_headerEnd(cs));
+    final t = count <= 1 ? 0.0 : rank / (count - 1);
+    final dh = ((b.hue - a.hue + 540) % 360) - 180; // 近い回り方で色相を補間
+    final hue = (a.hue + dh * t + 360) % 360;
+    final neutral = a.saturation < 0.12; // 黒・グレーのテーマは濃淡だけ
+    final sat = neutral ? a.saturation : (0.92 - 0.30 * t);
+    final light = dark ? (0.66 - 0.30 * t) : (0.42 + 0.38 * t);
+    return HSLColor.fromAHSL(1, hue, sat, light).toColor();
   }
 
   Color _headerEnd(ColorScheme cs) {
@@ -1006,7 +1023,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   }
 
   // 分析タブの先頭: ヘッダーと同じグラデーションの合計カード + カテゴリ構成の積み上げバー
-  Widget _buildAnalysisHero(List<MapEntry<String, int>> entries, int total) {
+  Widget _buildAnalysisHero(List<MapEntry<String, int>> entries, int total, Color Function(String) colorOf) {
     final cs = Theme.of(context).colorScheme;
     final on = cs.onPrimary;
     final top = entries.first;
@@ -1047,7 +1064,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                   if (i > 0) const SizedBox(width: 2),
                   Expanded(
                     flex: (entries[i].value * 1000 ~/ total).clamp(1, 1000),
-                    child: Container(decoration: BoxDecoration(gradient: _colorGradient(_getGenreColor(entries[i].key)))),
+                    child: Container(decoration: BoxDecoration(gradient: _colorGradient(colorOf(entries[i].key)))),
                   ),
                 ],
               ]),
@@ -1116,8 +1133,13 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     final touched = (_touchedIndex >= 0 && _touchedIndex < entries.length) ? entries[_touchedIndex] : null;
     final unitLabel = _modeTitle;
 
+    // 配色: テーマ色の同系統(順位で濃淡) か、カテゴリごとの色
+    final themed = _analysisThemed;
+    final rankOf = {for (var i = 0; i < entries.length; i++) entries[i].key: i};
+    Color colorOf(String genre) => themed ? _rankColor(rankOf[genre] ?? entries.length - 1, entries.length) : _getGenreColor(genre);
+
     return [
-        _buildAnalysisHero(entries, total),
+        _buildAnalysisHero(entries, total, colorOf),
         _analysisCard(
           icon: Icons.donut_large_rounded,
           title: 'カテゴリ別の割合',
@@ -1137,7 +1159,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                     }
                   }),
                   sections: List.generate(entries.length, (i) {
-                    final c = _getGenreColor(entries[i].key);
+                    final c = colorOf(entries[i].key);
                     return PieChartSectionData(
                       color: c,
                       gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [c, _shiftColor(c)]),
@@ -1158,7 +1180,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                   const SizedBox(height: 2),
                   Text('${_formatter.format(touched?.value ?? total)}円', style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w900, letterSpacing: -0.5)),
                   if (touched != null)
-                    Text('${(touched.value / total * 100).toStringAsFixed(1)}%', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: _getGenreColor(touched.key))),
+                    Text('${(touched.value / total * 100).toStringAsFixed(1)}%', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: themed ? cs.primary : colorOf(touched.key))),
                 ]),
               ]),
             ),
@@ -1174,7 +1196,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               onTap: () => setState(() => _touchedIndex = _touchedIndex == i ? -1 : i),
               behavior: HitTestBehavior.opaque,
               child: _barRow(
-                label: e.key, color: _getGenreColor(e.key), ratio: e.value / entries.first.value,
+                label: e.key, color: colorOf(e.key), ratio: e.value / entries.first.value,
                 amount: '${_formatter.format(e.value)}円', sub: '${(e.value / total * 100).toStringAsFixed(0)}%',
                 active: _touchedIndex == -1 || _touchedIndex == i,
               ),
@@ -1188,7 +1210,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             for (var r = 0; r < topItems.length; r++)
               _barRow(
                 rank: r + 1,
-                label: topItems[r]['name'], color: _getGenreColor(topItems[r]['genre']),
+                label: topItems[r]['name'], color: themed ? _rankColor(r, topItems.length) : _getGenreColor(topItems[r]['genre']),
                 ratio: _displayPrice(topItems[r]) / _displayPrice(topItems.first),
                 amount: '${_formatter.format(_displayPrice(topItems[r]))}円',
                 sub: '${(_displayPrice(topItems[r]) / total * 100).toStringAsFixed(0)}%',
@@ -1325,6 +1347,13 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             const Text('設定', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
             const SizedBox(height: 8),
             SwitchListTile(contentPadding: EdgeInsets.zero, title: const Text('ダークモード', style: TextStyle(fontWeight: FontWeight.w700)), secondary: const Icon(Icons.dark_mode_outlined), value: isDark, onChanged: (v) { MyApp.of(context)?.toggleDarkMode(v); Navigator.pop(context); }),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero, secondary: const Icon(Icons.gradient_rounded),
+              title: const Text('分析をテーマ色でそろえる', style: TextStyle(fontWeight: FontWeight.w700)),
+              subtitle: const Text('オフにすると、カテゴリごとの色で表示'),
+              value: _analysisThemed,
+              onChanged: (v) { setState(() => _analysisThemed = v); _savePref('analysis_colors', v ? 'theme' : 'genre'); Navigator.pop(context); },
+            ),
             ListTile(
               contentPadding: EdgeInsets.zero, leading: const Icon(Icons.account_balance_wallet_outlined),
               title: const Text('手取り月収（任意）', style: TextStyle(fontWeight: FontWeight.w700)),
