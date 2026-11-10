@@ -1,7 +1,7 @@
 /// 引き継ぎ用のCSVの書き出しと読み込み。
 /// 読み込みは列の名前で対応づけるので、列の順番が違っていたり、古い形式(列が少ない)でも読める。
 
-const List<String> csvHeaders = ['名前', '金額', 'サイクル', '更新月', '更新日', 'ジャンル', '計上', '検討中', '利用頻度', '月額にも含む', 'ジャンル色'];
+const List<String> csvHeaders = ['名前', '金額', 'サイクル', '更新月', '更新日', 'ジャンル', '計上', '検討中', '利用頻度', '月額にも含む', 'ジャンル色', 'メモ'];
 
 const _usageToLabel = {'often': 'よく使う', 'sometimes': 'たまに', 'rarely': 'ほぼ使わない'};
 const _labelToUsage = {'よく使う': 'often', 'たまに': 'sometimes', 'たまに使う': 'sometimes', 'ほぼ使わない': 'rarely'};
@@ -38,6 +38,7 @@ String buildCsv(List<Map<String, dynamic>> subs, Map<String, int> genreColors) {
       _usageToLabel[s['usage']] ?? '',
       (s['showInMonthly'] ?? false) ? 'はい' : '',
       color == null ? '' : color.toRadixString(16).toUpperCase().padLeft(8, '0'),
+      _escape('${s['memo'] ?? ''}'),
     ].join(','));
   }
   return b.toString();
@@ -111,6 +112,7 @@ CsvImport parseCsv(String text) {
   final cUsage = col(['利用頻度']);
   final cShow = col(['月額にも含む']);
   final cColor = col(['ジャンル色']);
+  final cMemo = col(['メモ']);
 
   String at(List<String> r, int c) => (c >= 0 && c < r.length) ? r[c].trim() : '';
 
@@ -140,6 +142,7 @@ CsvImport parseCsv(String text) {
       'isReviewing': at(r, cReview).isNotEmpty,
       'usage': _labelToUsage[at(r, cUsage)],
       'showInMonthly': at(r, cShow).isNotEmpty,
+      'memo': at(r, cMemo).isEmpty ? null : at(r, cMemo),
     });
 
     final colorText = at(r, cColor);
